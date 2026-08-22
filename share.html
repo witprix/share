@@ -138,7 +138,7 @@
                 </div>
                 
                 <div id="input-url" class="input-group" style="display:none;">
-                    <input type="url" id="p2p-url" placeholder="https://example.com">
+                    <input type="text" id="p2p-url" placeholder="https://example.com">
                 </div>
 
                 <div id="input-address" class="input-group" style="display:none;">
@@ -278,8 +278,14 @@
                 payload.file = await file.arrayBuffer();
                 payload.name = file.name;
             } else if (type === 'url') {
-                payload.content = document.getElementById('p2p-url').value;
-                if (!payload.content) return;
+                let rawUrl = document.getElementById('p2p-url').value.trim();
+                if (!rawUrl) return;
+                
+                // Check if the URL starts with http:// or https://. If not, add it.
+                if (!/^https?:\/\//i.test(rawUrl)) {
+                    rawUrl = 'https://' + rawUrl;
+                }
+                payload.content = rawUrl;
             } else if (type === 'address') {
                 payload.content = document.getElementById('p2p-address').value;
                 if (!payload.content) return;
