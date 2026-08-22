@@ -75,8 +75,9 @@
         .overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: var(--bg-gradient); z-index: 1000;
-            flex-direction: column; align-items: center; justify-content: center;
+            flex-direction: column; align-items: center; justify-content: flex-start;
             color: white; text-align: center; padding: 20px; box-sizing: border-box;
+            overflow-y: auto;
         }
 
         .loading {
@@ -89,7 +90,12 @@
 
         .receiver-card {
             background: white; color: #333; padding: 20px; border-radius: 12px;
-            max-width: 400px; width: 100%; margin-top: 20px; text-align: left;
+            max-width: 400px; width: 100%; margin-bottom: 15px; text-align: left;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        #received-stack {
+            width: 100%; max-width: 400px; display: flex; flex-direction: column; align-items: center;
         }
     </style>
 </head>
@@ -97,17 +103,13 @@
 
     <!-- Receiver Overlay -->
     <div id="receive-overlay" class="overlay">
-        <h2>📥 Connected Receiver</h2>
+        <h2 style="color:white; margin-top: 20px;">📥 Connected Receiver</h2>
         <p id="receive-status">Connecting to sender...</p>
         <div class="loading" id="receive-loader"></div>
         
-        <div id="received-content" class="receiver-card" style="display: none;">
-            <h3 id="rcv-title">Content Received</h3>
-            <div id="rcv-body" style="margin-bottom: 15px; word-break: break-all;"></div>
-            <div id="rcv-actions"></div>
-        </div>
+        <div id="received-stack"></div>
 
-        <button class="btn btn-secondary" style="margin-top: 20px; max-width: 200px;" onclick="window.location.href=window.location.href.split('?')[0]">Cancel / Restart</button>
+        <button class="btn btn-secondary" style="margin-top: 20px; max-width: 200px;" onclick="window.location.href=window.location.href.split('?')[0]">Disconnect / Restart</button>
     </div>
 
     <!-- Sender UI -->
@@ -126,7 +128,7 @@
                 <div class="input-group">
                     <label>What do you want to share?</label>
                     <select id="share-type" onchange="toggleInputFields()">
-                        <option value="file">File</option>
+                        <option value="file">File (Max 50MB)</option>
                         <option value="url">URL / Link</option>
                         <option value="address">Address</option>
                         <option value="text">Raw Text</option>
@@ -149,7 +151,7 @@
                     <textarea id="p2p-text" rows="4" placeholder="Type message here..."></textarea>
                 </div>
 
-                <button class="btn btn-primary" onclick="sendData()">Send to Device</button>
+                <button class="btn btn-primary" id="send-btn" onclick="sendData()">Send to Device</button>
                 <p id="send-status" style="text-align:center; color:#28a745; display:none; margin-top:10px; font-weight:bold;">✓ Sent successfully!</p>
             </div>
         </div>
@@ -160,7 +162,8 @@
         let activeConnection = null;
         let pingInterval = null; 
 
-        // Expanded STUN configuration for better cross-network mobile discovery
+        const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB Limit
+
         const peerConfig = {
             config: {
                 iceServers: [
@@ -180,20 +183,31 @@
             document.getElementById('input-text').style.display = type === 'text' ? 'block' : 'none';
         }
 
+        function clearInputs() {
+            document.getElementById('p2p-file').value = '';
+            document.getElementById('p2p-url').value = '';
+            document.getElementById('p2p-address').value = '';
+            document.getElementById('p2p-text').value = '';
+        }
+
         // --- RECEIVER LOGIC ---
         const receiveId = new URLSearchParams(window.location.search).get('receive_peer');
         if (receiveId) {
             document.getElementById('receive-overlay').style.display = 'flex';
             peerInstance = new Peer(peerConfig);
             
+            peerInstance.on('error', (err) => {
+                clearInterval(pingInterval);
+                document.getElementById('receive-loader').style.display = 'none';
+                document.getElementById('receive-status').innerText = `Error: ${err.type}. Please restart.`;
+            });
+
             peerInstance.on('open', () => {
-                // Removed reliable: true to prevent SCTP hanging on mobile browsers
                 activeConnection = peerInstance.connect(receiveId);
                 
                 activeConnection.on('open', () => {
                     document.getElementById('receive-status').innerText = '✅ Connected! Waiting for sender...';
                     
-                    // 1. HEARTBEAT: Continuously ping the sender until they acknowledge
                     pingInterval = setInterval(() => {
                         if (activeConnection && activeConnection.open) {
                             activeConnection.send({ type: 'PING' });
@@ -201,69 +215,54 @@
                     }, 1000);
                 });
                 
+                activeConnection.on('close', () => {
+                    clearInterval(pingInterval);
+                    document.getElementById('receive-status').innerText = 'Sender disconnected.';
+                    document.getElementById('receive-status').style.display = 'block';
+                });
+
                 activeConnection.on('data', (data) => {
                     if (!data) return;
-
-                    // 2. HEARTBEAT STOP: If sender acknowledges, stop pinging
                     if (data.type === 'PONG') {
                         clearInterval(pingInterval);
                         return;
                     }
 
-                    // Process actual payload
                     document.getElementById('receive-loader').style.display = 'none';
                     document.getElementById('receive-status').style.display = 'none';
                     
-                    const rcvContent = document.getElementById('received-content');
-                    const rcvBody = document.getElementById('rcv-body');
-                    const rcvActions = document.getElementById('rcv-actions');
+                    const stack = document.getElementById('received-stack');
+                    const card = document.createElement('div');
+                    card.className = 'receiver-card';
                     
-                    rcvContent.style.display = 'block';
-                    rcvActions.innerHTML = '';
+                    let bodyHtml = '';
+                    let actionHtml = '';
 
                     if (data.type === 'file' || data.file) {
-                        rcvBody.innerHTML = `<strong>File Received:</strong> ${data.name}`;
+                        bodyHtml = `<strong>File Received:</strong> ${data.name}`;
                         downloadFile(data.file, data.name);
-                        rcvActions.innerHTML = `<p style="color: #28a745; font-weight: bold;">✓ Download completed automatically.</p>`;
+                        actionHtml = `<p style="color: #28a745; font-weight: bold; margin:0;">✓ Downloaded.</p>`;
                     } 
                     else if (data.type === 'url') {
-                        rcvBody.innerHTML = `<strong>URL:</strong><br><a href="${data.content}" target="_blank" style="color:#667eea;">${data.content}</a>`;
-                        const linkBtn = document.createElement('button');
-                        linkBtn.className = 'btn btn-primary';
-                        linkBtn.innerText = '🚀 Open Website';
-                        linkBtn.onclick = () => window.open(data.content, '_blank');
-                        rcvActions.appendChild(linkBtn);
+                        bodyHtml = `<strong>URL:</strong><br><a href="${data.content}" target="_blank" style="color:#667eea; word-break: break-all;">${data.content}</a>`;
+                        actionHtml = `<button class="btn btn-primary" onclick="window.open('${data.content}', '_blank')" style="margin-top:10px;">🚀 Open Website</button>`;
                         
                         const pop = window.open(data.content, '_blank');
                         if (!pop) {
-                            rcvActions.insertAdjacentHTML('afterbegin', '<p style="color:#666; font-size:0.85em; margin-bottom:8px;">(Tap button below to launch link)</p>');
+                            actionHtml = `<p style="color:#666; font-size:0.85em; margin-bottom:8px;">(Tap button below to launch link)</p>` + actionHtml;
                         }
                     } 
                     else if (data.type === 'address') {
-                        rcvBody.innerHTML = `<strong>Address:</strong><br>${data.content.replace(/\n/g, '<br>')}`;
-                        const saveBtn = document.createElement('button');
-                        saveBtn.className = 'btn btn-success';
-                        saveBtn.innerText = '💾 Save to Contacts (.vcf)';
-                        saveBtn.onclick = () => saveAsVCard(data.content);
-                        rcvActions.appendChild(saveBtn);
+                        bodyHtml = `<strong>Address:</strong><br>${data.content.replace(/\n/g, '<br>')}`;
+                        actionHtml = `<button class="btn btn-success" style="margin-top:10px;" onclick="saveAsVCard(\`${data.content}\`)">💾 Save to Contacts</button>`;
                     } 
                     else if (data.type === 'text') {
-                        rcvBody.innerHTML = `<strong>Text:</strong><br>${data.content.replace(/\n/g, '<br>')}`;
-                        const copyBtn = document.createElement('button');
-                        copyBtn.className = 'btn btn-primary';
-                        copyBtn.innerText = '📋 Copy Text';
-                        copyBtn.onclick = () => {
-                            navigator.clipboard.writeText(data.content);
-                            copyBtn.innerText = '✓ Copied!';
-                        };
-                        rcvActions.appendChild(copyBtn);
+                        bodyHtml = `<strong>Text:</strong><br><span style="word-break: break-all;">${data.content.replace(/\n/g, '<br>')}</span>`;
+                        actionHtml = `<button class="btn btn-primary" style="margin-top:10px;" onclick="navigator.clipboard.writeText(\`${data.content}\`); this.innerText='✓ Copied!';">📋 Copy Text</button>`;
                     }
-                });
-                
-                activeConnection.on('error', (err) => { 
-                    console.error("Connection error:", err);
-                    document.getElementById('receive-status').innerText = 'Connection error. Please refresh.'; 
-                    clearInterval(pingInterval);
+
+                    card.innerHTML = `<div style="margin-bottom: 10px;">${bodyHtml}</div><div>${actionHtml}</div>`;
+                    stack.prepend(card); // Add newest items to the top
                 });
             });
         }
@@ -276,6 +275,12 @@
             
             peerInstance = new Peer(peerConfig);
             
+            peerInstance.on('error', (err) => {
+                alert(`Network Error: ${err.type}. Check your connection and try again.`);
+                btn.innerText = 'Generate QR Code Link';
+                btn.disabled = false;
+            });
+
             peerInstance.on('open', (id) => {
                 document.getElementById('p2p-qr-container').style.display = 'block';
                 document.getElementById('qrcode').innerHTML = '';
@@ -301,12 +306,20 @@
                     }
                 }
 
+                function handleDisconnect() {
+                    const status = document.getElementById('p2p-conn-status');
+                    status.innerText = "Receiver disconnected. Waiting...";
+                    status.style.color = "#ff6b6b";
+                    document.getElementById('p2p-send-controls').style.display = 'none';
+                }
+
                 activeConnection.on('open', setSenderConnected);
+                activeConnection.on('close', handleDisconnect);
+                activeConnection.on('error', handleDisconnect);
 
                 activeConnection.on('data', (data) => {
-                    // 3. HEARTBEAT RESPONSE: If receiver is asking if we are there, say yes and update UI
                     if (data && data.type === 'PING') {
-                        setSenderConnected(); // Force UI update if 'open' event was missed
+                        setSenderConnected(); 
                         activeConnection.send({ type: 'PONG' });
                     }
                 });
@@ -318,14 +331,29 @@
                 return alert("Receiver is not connected yet.");
             }
             
+            const btn = document.getElementById('send-btn');
             const type = document.getElementById('share-type').value;
             let payload = { type: type };
 
             if (type === 'file') {
                 const file = document.getElementById('p2p-file').files[0];
                 if (!file) return alert("Please select a file.");
-                payload.file = await file.arrayBuffer();
-                payload.name = file.name;
+                
+                if (file.size > MAX_FILE_SIZE) {
+                    return alert("File is too large. Please select a file under 50MB to prevent mobile crashes.");
+                }
+
+                btn.innerText = 'Sending File...';
+                btn.disabled = true;
+                
+                try {
+                    payload.file = await file.arrayBuffer();
+                    payload.name = file.name;
+                } catch (e) {
+                    btn.innerText = 'Send to Device';
+                    btn.disabled = false;
+                    return alert("Error reading file.");
+                }
             } else if (type === 'url') {
                 let rawUrl = document.getElementById('p2p-url').value.trim();
                 if (!rawUrl) return alert("Please enter a URL.");
@@ -342,11 +370,19 @@
                 if (!payload.content) return alert("Please enter text.");
             }
 
-            activeConnection.send(payload);
-            
-            const status = document.getElementById('send-status');
-            status.style.display = 'block';
-            setTimeout(() => status.style.display = 'none', 4000);
+            try {
+                activeConnection.send(payload);
+                clearInputs();
+                
+                const status = document.getElementById('send-status');
+                status.style.display = 'block';
+                setTimeout(() => status.style.display = 'none', 4000);
+            } catch (err) {
+                alert("Failed to send data. The connection might have been lost.");
+            } finally {
+                btn.innerText = 'Send to Device';
+                btn.disabled = false;
+            }
         }
 
         // --- HELPERS ---
