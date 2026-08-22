@@ -158,12 +158,15 @@
     <script>
         let peerInstance = null;
         let activeConnection = null;
+        let pingInterval = null; 
 
-        // Public STUN configuration for reliable WebRTC handshakes across devices
+        // Expanded STUN configuration for better cross-network mobile discovery
         const peerConfig = {
             config: {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
                     { urls: 'stun:global.stun.twilio.com:3478' }
                 ]
             }
@@ -184,26 +187,30 @@
             peerInstance = new Peer(peerConfig);
             
             peerInstance.on('open', () => {
-                activeConnection = peerInstance.connect(receiveId, { reliable: true });
+                // Removed reliable: true to prevent SCTP hanging on mobile browsers
+                activeConnection = peerInstance.connect(receiveId);
                 
-                function handleConnected() {
-                    document.getElementById('receive-status').innerText = '✅ Connected! Waiting for sender to transfer...';
-                    // Send handshake ping to inform sender immediately
-                    try {
-                        activeConnection.send({ type: 'HANDSHAKE_PING' });
-                    } catch(e) {}
-                }
-
-                if (activeConnection.open) {
-                    handleConnected();
-                } else {
-                    activeConnection.on('open', handleConnected);
-                }
+                activeConnection.on('open', () => {
+                    document.getElementById('receive-status').innerText = '✅ Connected! Waiting for sender...';
+                    
+                    // 1. HEARTBEAT: Continuously ping the sender until they acknowledge
+                    pingInterval = setInterval(() => {
+                        if (activeConnection && activeConnection.open) {
+                            activeConnection.send({ type: 'PING' });
+                        }
+                    }, 1000);
+                });
                 
                 activeConnection.on('data', (data) => {
-                    // Ignore handshake reflection
-                    if (data && data.type === 'HANDSHAKE_PING') return;
+                    if (!data) return;
 
+                    // 2. HEARTBEAT STOP: If sender acknowledges, stop pinging
+                    if (data.type === 'PONG') {
+                        clearInterval(pingInterval);
+                        return;
+                    }
+
+                    // Process actual payload
                     document.getElementById('receive-loader').style.display = 'none';
                     document.getElementById('receive-status').style.display = 'none';
                     
@@ -214,13 +221,11 @@
                     rcvContent.style.display = 'block';
                     rcvActions.innerHTML = '';
 
-                    // 1. File Handling
                     if (data.type === 'file' || data.file) {
                         rcvBody.innerHTML = `<strong>File Received:</strong> ${data.name}`;
                         downloadFile(data.file, data.name);
                         rcvActions.innerHTML = `<p style="color: #28a745; font-weight: bold;">✓ Download completed automatically.</p>`;
                     } 
-                    // 2. URL Handling
                     else if (data.type === 'url') {
                         rcvBody.innerHTML = `<strong>URL:</strong><br><a href="${data.content}" target="_blank" style="color:#667eea;">${data.content}</a>`;
                         const linkBtn = document.createElement('button');
@@ -229,13 +234,11 @@
                         linkBtn.onclick = () => window.open(data.content, '_blank');
                         rcvActions.appendChild(linkBtn);
                         
-                        // Attempt popup launch
                         const pop = window.open(data.content, '_blank');
                         if (!pop) {
                             rcvActions.insertAdjacentHTML('afterbegin', '<p style="color:#666; font-size:0.85em; margin-bottom:8px;">(Tap button below to launch link)</p>');
                         }
                     } 
-                    // 3. Address Handling
                     else if (data.type === 'address') {
                         rcvBody.innerHTML = `<strong>Address:</strong><br>${data.content.replace(/\n/g, '<br>')}`;
                         const saveBtn = document.createElement('button');
@@ -244,7 +247,6 @@
                         saveBtn.onclick = () => saveAsVCard(data.content);
                         rcvActions.appendChild(saveBtn);
                     } 
-                    // 4. Text Handling
                     else if (data.type === 'text') {
                         rcvBody.innerHTML = `<strong>Text:</strong><br>${data.content.replace(/\n/g, '<br>')}`;
                         const copyBtn = document.createElement('button');
@@ -258,8 +260,10 @@
                     }
                 });
                 
-                activeConnection.on('error', () => { 
-                    document.getElementById('receive-status').innerText = 'Connection error.'; 
+                activeConnection.on('error', (err) => { 
+                    console.error("Connection error:", err);
+                    document.getElementById('receive-status').innerText = 'Connection error. Please refresh.'; 
+                    clearInterval(pingInterval);
                 });
             });
         }
@@ -290,29 +294,29 @@
 
                 function setSenderConnected() {
                     const status = document.getElementById('p2p-conn-status');
-                    status.innerText = "✅ Device Connected! Ready to send.";
-                    status.style.color = "#28a745";
-                    document.getElementById('p2p-send-controls').style.display = 'block';
+                    if (status.innerText !== "✅ Device Connected! Ready to send.") {
+                        status.innerText = "✅ Device Connected! Ready to send.";
+                        status.style.color = "#28a745";
+                        document.getElementById('p2p-send-controls').style.display = 'block';
+                    }
                 }
 
-                // Check state directly
-                if (conn.open) {
-                    setSenderConnected();
-                } else {
-                    conn.on('open', setSenderConnected);
-                }
+                activeConnection.on('open', setSenderConnected);
 
-                // Listen for handshake ping from receiver
-                conn.on('data', (data) => {
-                    if (data && data.type === 'HANDSHAKE_PING') {
-                        setSenderConnected();
+                activeConnection.on('data', (data) => {
+                    // 3. HEARTBEAT RESPONSE: If receiver is asking if we are there, say yes and update UI
+                    if (data && data.type === 'PING') {
+                        setSenderConnected(); // Force UI update if 'open' event was missed
+                        activeConnection.send({ type: 'PONG' });
                     }
                 });
             });
         }
 
         async function sendData() {
-            if (!activeConnection) return alert("Receiver is not connected yet.");
+            if (!activeConnection || !activeConnection.open) {
+                return alert("Receiver is not connected yet.");
+            }
             
             const type = document.getElementById('share-type').value;
             let payload = { type: type };
@@ -326,7 +330,6 @@
                 let rawUrl = document.getElementById('p2p-url').value.trim();
                 if (!rawUrl) return alert("Please enter a URL.");
                 
-                // Format relative URLs into absolute URLs
                 if (!/^https?:\/\//i.test(rawUrl)) {
                     rawUrl = 'https://' + rawUrl;
                 }
