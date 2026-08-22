@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wi-Fi Share & Transfer</title>
+    
+    <!-- Core Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --container-bg: white;
+            --text-main: #333;
+            --upload-bg: #f8f9ff;
+            --border-color: #ddd;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-gradient);
+            min-height: 100vh;
+            padding: 20px;
+            color: var(--text-main);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: var(--container-bg);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 500px;
+        }
+
+        h2, h3 { color: #667eea; margin-top: 0; text-align: center; }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            font-size: 1em;
+            margin-bottom: 10px;
+        }
+
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5568d3; }
+        .btn-secondary { background: #f5f5f5; color: #333; border: 1px solid var(--border-color); }
+        .btn-secondary:hover { background: #e0e0e0; }
+        .btn-success { background: #28a745; color: white; }
+
+        .input-group { margin-bottom: 15px; }
+        .input-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .input-group select, .input-group input, .input-group textarea {
+            width: 100%; padding: 10px; border: 1px solid var(--border-color);
+            border-radius: 6px; box-sizing: border-box; font-family: inherit;
+        }
+
+        #qrcode {
+            background: white; padding: 15px; border-radius: 8px;
+            display: inline-block; margin: 15px auto;
+        }
+
+        /* Overlays */
+        .overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-gradient); z-index: 1000;
+            flex-direction: column; align-items: center; justify-content: center;
+            color: white; text-align: center; padding: 20px; box-sizing: border-box;
+        }
+
+        .loading {
+            display: inline-block; width: 40px; height: 40px;
+            border: 4px solid rgba(255,255,255,0.3); border-top-color: #fff;
+            border-radius: 50%; animation: spin 1s linear infinite; margin: 20px;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .receiver-card {
+            background: white; color: #333; padding: 20px; border-radius: 12px;
+            max-width: 400px; width: 100%; margin-top: 20px; text-align: left;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Receiver Overlay -->
+    <div id="receive-overlay" class="overlay">
+        <h2>📥 Receiving Connection</h2>
+        <p id="receive-status">Connecting to sender...</p>
+        <div class="loading" id="receive-loader"></div>
+        
+        <div id="received-content" class="receiver-card" style="display: none;">
+            <h3 id="rcv-title">Content Received</h3>
+            <div id="rcv-body" style="margin-bottom: 15px; word-break: break-all;"></div>
+            <div id="rcv-actions"></div>
+        </div>
+
+        <button class="btn btn-secondary" style="margin-top: 20px; max-width: 200px;" onclick="window.location.href=window.location.href.split('?')[0]">Cancel / Restart</button>
+    </div>
+
+    <!-- Sender UI -->
+    <div class="container">
+        <h2>📤 Wi-Fi Share</h2>
+        <p style="text-align: center; color: #666;">Send files, text, URLs, or addresses directly to nearby devices.</p>
+        
+        <button class="btn btn-secondary" id="p2p-init-btn" onclick="initP2PSender()">1. Generate Connection QR</button>
+        
+        <div id="p2p-qr-container" style="display:none; text-align:center;">
+            <p>Scan this QR with the receiving device:</p>
+            <div id="qrcode"></div>
+            <p id="p2p-conn-status" style="font-weight:bold; color:#ff6b6b;">Waiting for connection...</p>
+            
+            <div id="p2p-send-controls" style="display:none; text-align: left; margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd;">
+                <div class="input-group">
+                    <label>What do you want to share?</label>
+                    <select id="share-type" onchange="toggleInputFields()">
+                        <option value="file">File</option>
+                        <option value="url">URL / Link</option>
+                        <option value="address">Address</option>
+                        <option value="text">Raw Text</option>
+                    </select>
+                </div>
+
+                <div id="input-file" class="input-group">
+                    <input type="file" id="p2p-file">
+                </div>
+                
+                <div id="input-url" class="input-group" style="display:none;">
+                    <input type="url" id="p2p-url" placeholder="https://example.com">
+                </div>
+
+                <div id="input-address" class="input-group" style="display:none;">
+                    <textarea id="p2p-address" rows="3" placeholder="Enter physical address..."></textarea>
+                </div>
+
+                <div id="input-text" class="input-group" style="display:none;">
+                    <textarea id="p2p-text" rows="4" placeholder="Type message here..."></textarea>
+                </div>
+
+                <button class="btn btn-primary" onclick="sendData()">Send to Device</button>
+                <p id="send-status" style="text-align:center; color:#28a745; display:none; margin-top:10px;">Sent successfully!</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let peerInstance = null;
+        let activeConnection = null;
+
+        // UI Toggle for Input Types
+        function toggleInputFields() {
+            const type = document.getElementById('share-type').value;
+            document.getElementById('input-file').style.display = type === 'file' ? 'block' : 'none';
+            document.getElementById('input-url').style.display = type === 'url' ? 'block' : 'none';
+            document.getElementById('input-address').style.display = type === 'address' ? 'block' : 'none';
+            document.getElementById('input-text').style.display = type === 'text' ? 'block' : 'none';
+        }
+
+        // --- RECEIVER LOGIC ---
+        const receiveId = new URLSearchParams(window.location.search).get('receive_peer');
+        if (receiveId) {
+            document.getElementById('receive-overlay').style.display = 'flex';
+            peerInstance = new Peer();
+            
+            peerInstance.on('open', () => {
+                activeConnection = peerInstance.connect(receiveId);
+                
+                activeConnection.on('open', () => { 
+                    document.getElementById('receive-status').innerText = 'Connected! Waiting for data...'; 
+                });
+                
+                activeConnection.on('data', (data) => {
+                    document.getElementById('receive-loader').style.display = 'none';
+                    document.getElementById('receive-status').style.display = 'none';
+                    
+                    const rcvContent = document.getElementById('received-content');
+                    const rcvBody = document.getElementById('rcv-body');
+                    const rcvActions = document.getElementById('rcv-actions');
+                    
+                    rcvContent.style.display = 'block';
+                    rcvActions.innerHTML = ''; // Reset actions
+
+                    // Handle Existing File Logic
+                    if (data.type === 'file' || data.file) {
+                        rcvBody.innerHTML = `<strong>File:</strong> ${data.name}`;
+                        downloadFile(data.file, data.name);
+                        rcvActions.innerHTML = `<p style="color: #28a745; font-weight: bold;">Download triggered.</p>`;
+                    } 
+                    // Handle URL Logic
+                    else if (data.type === 'url') {
+                        rcvBody.innerHTML = `<strong>URL:</strong> <a href="${data.content}" target="_blank">${data.content}</a>`;
+                        rcvActions.innerHTML = `<button class="btn btn-primary" onclick="window.open('${data.content}', '_blank')">Open Link</button>`;
+                        window.open(data.content, '_blank'); // Auto-launch
+                    } 
+                    // Handle Address Logic
+                    else if (data.type === 'address') {
+                        rcvBody.innerHTML = `<strong>Address:</strong><br>${data.content.replace(/\\n/g, '<br>')}`;
+                        const saveBtn = document.createElement('button');
+                        saveBtn.className = 'btn btn-success';
+                        saveBtn.innerText = 'Save to Contacts';
+                        saveBtn.onclick = () => saveAsVCard(data.content);
+                        rcvActions.appendChild(saveBtn);
+                    } 
+                    // Handle Text Logic
+                    else if (data.type === 'text') {
+                        rcvBody.innerHTML = `<strong>Text:</strong><br>${data.content.replace(/\\n/g, '<br>')}`;
+                        const copyBtn = document.createElement('button');
+                        copyBtn.className = 'btn btn-primary';
+                        copyBtn.innerText = 'Copy to Clipboard';
+                        copyBtn.onclick = () => {
+                            navigator.clipboard.writeText(data.content);
+                            copyBtn.innerText = 'Copied!';
+                        };
+                        rcvActions.appendChild(copyBtn);
+                    }
+                });
+                
+                activeConnection.on('error', () => { 
+                    document.getElementById('receive-status').innerText = 'Connection lost.'; 
+                });
+            });
+        }
+
+        // --- SENDER LOGIC ---
+        function initP2PSender() {
+            const btn = document.getElementById('p2p-init-btn'); 
+            btn.innerText = 'Generating...'; 
+            btn.disabled = true;
+            
+            peerInstance = new Peer();
+            peerInstance.on('open', (id) => {
+                document.getElementById('p2p-qr-container').style.display = 'block';
+                document.getElementById('qrcode').innerHTML = '';
+                
+                // Generate QR pointing to this exact URL + the peer ID
+                const currentUrl = window.location.href.split('?')[0];
+                new QRCode(document.getElementById("qrcode"), { 
+                    text: currentUrl + '?receive_peer=' + id, 
+                    width: 200, 
+                    height: 200 
+                });
+                btn.style.display = 'none';
+            });
+            
+            peerInstance.on('connection', (conn) => {
+                activeConnection = conn;
+                activeConnection.on('open', () => {
+                    const status = document.getElementById('p2p-conn-status');
+                    status.innerText = "✅ Device Connected! Ready to send.";
+                    status.style.color = "#28a745";
+                    document.getElementById('p2p-send-controls').style.display = 'block';
+                });
+            });
+        }
+
+        async function sendData() {
+            if (!activeConnection) return;
+            
+            const type = document.getElementById('share-type').value;
+            let payload = { type: type };
+
+            if (type === 'file') {
+                const file = document.getElementById('p2p-file').files[0];
+                if (!file) return alert("Please select a file.");
+                // Retaining the exact arrayBuffer logic from the original script
+                payload.file = await file.arrayBuffer();
+                payload.name = file.name;
+            } else if (type === 'url') {
+                payload.content = document.getElementById('p2p-url').value;
+                if (!payload.content) return;
+            } else if (type === 'address') {
+                payload.content = document.getElementById('p2p-address').value;
+                if (!payload.content) return;
+            } else if (type === 'text') {
+                payload.content = document.getElementById('p2p-text').value;
+                if (!payload.content) return;
+            }
+
+            activeConnection.send(payload);
+            
+            const status = document.getElementById('send-status');
+            status.style.display = 'block';
+            setTimeout(() => status.style.display = 'none', 3000);
+        }
+
+        // --- UTILITY FUNCTIONS ---
+        function downloadFile(fileBytes, filename) {
+            const blob = new Blob([fileBytes]);
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        }
+
+        function saveAsVCard(addressText) {
+            const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:Shared Address\nADR:;;${addressText.replace(/\\n/g, ', ')}\nEND:VCARD`;
+            const blob = new Blob([vcard], { type: 'text/vcard' });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'address.vcf';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
