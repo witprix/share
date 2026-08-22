@@ -97,7 +97,7 @@
 
     <!-- Receiver Overlay -->
     <div id="receive-overlay" class="overlay">
-        <h2>📥 Receiving Connection</h2>
+        <h2>📥 Connected Receiver</h2>
         <p id="receive-status">Connecting to sender...</p>
         <div class="loading" id="receive-loader"></div>
         
@@ -115,7 +115,7 @@
         <h2>📤 Wi-Fi Share</h2>
         <p style="text-align: center; color: #666;">Send files, text, URLs, or addresses directly to nearby devices.</p>
         
-        <button class="btn btn-secondary" id="p2p-init-btn" onclick="initP2PSender()">1. Generate Connection QR</button>
+        <button class="btn btn-secondary" id="p2p-init-btn" onclick="initP2PSender()">Generate QR Code Link</button>
         
         <div id="p2p-qr-container" style="display:none; text-align:center;">
             <p>Scan this QR with the receiving device:</p>
@@ -138,7 +138,7 @@
                 </div>
                 
                 <div id="input-url" class="input-group" style="display:none;">
-                    <input type="text" id="p2p-url" placeholder="https://example.com">
+                    <input type="text" id="p2p-url" placeholder="example.com or https://example.com">
                 </div>
 
                 <div id="input-address" class="input-group" style="display:none;">
@@ -150,7 +150,7 @@
                 </div>
 
                 <button class="btn btn-primary" onclick="sendData()">Send to Device</button>
-                <p id="send-status" style="text-align:center; color:#28a745; display:none; margin-top:10px;">Sent successfully!</p>
+                <p id="send-status" style="text-align:center; color:#28a745; display:none; margin-top:10px; font-weight:bold;">✓ Sent successfully!</p>
             </div>
         </div>
     </div>
@@ -159,7 +159,16 @@
         let peerInstance = null;
         let activeConnection = null;
 
-        // UI Toggle for Input Types
+        // Public STUN configuration for reliable WebRTC handshakes across devices
+        const peerConfig = {
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:global.stun.twilio.com:3478' }
+                ]
+            }
+        };
+
         function toggleInputFields() {
             const type = document.getElementById('share-type').value;
             document.getElementById('input-file').style.display = type === 'file' ? 'block' : 'none';
@@ -172,16 +181,29 @@
         const receiveId = new URLSearchParams(window.location.search).get('receive_peer');
         if (receiveId) {
             document.getElementById('receive-overlay').style.display = 'flex';
-            peerInstance = new Peer();
+            peerInstance = new Peer(peerConfig);
             
             peerInstance.on('open', () => {
-                activeConnection = peerInstance.connect(receiveId);
+                activeConnection = peerInstance.connect(receiveId, { reliable: true });
                 
-                activeConnection.on('open', () => { 
-                    document.getElementById('receive-status').innerText = 'Connected! Waiting for data...'; 
-                });
+                function handleConnected() {
+                    document.getElementById('receive-status').innerText = '✅ Connected! Waiting for sender to transfer...';
+                    // Send handshake ping to inform sender immediately
+                    try {
+                        activeConnection.send({ type: 'HANDSHAKE_PING' });
+                    } catch(e) {}
+                }
+
+                if (activeConnection.open) {
+                    handleConnected();
+                } else {
+                    activeConnection.on('open', handleConnected);
+                }
                 
                 activeConnection.on('data', (data) => {
+                    // Ignore handshake reflection
+                    if (data && data.type === 'HANDSHAKE_PING') return;
+
                     document.getElementById('receive-loader').style.display = 'none';
                     document.getElementById('receive-status').style.display = 'none';
                     
@@ -190,45 +212,54 @@
                     const rcvActions = document.getElementById('rcv-actions');
                     
                     rcvContent.style.display = 'block';
-                    rcvActions.innerHTML = ''; // Reset actions
+                    rcvActions.innerHTML = '';
 
-                    // Handle Existing File Logic
+                    // 1. File Handling
                     if (data.type === 'file' || data.file) {
-                        rcvBody.innerHTML = `<strong>File:</strong> ${data.name}`;
+                        rcvBody.innerHTML = `<strong>File Received:</strong> ${data.name}`;
                         downloadFile(data.file, data.name);
-                        rcvActions.innerHTML = `<p style="color: #28a745; font-weight: bold;">Download triggered.</p>`;
+                        rcvActions.innerHTML = `<p style="color: #28a745; font-weight: bold;">✓ Download completed automatically.</p>`;
                     } 
-                    // Handle URL Logic
+                    // 2. URL Handling
                     else if (data.type === 'url') {
-                        rcvBody.innerHTML = `<strong>URL:</strong> <a href="${data.content}" target="_blank">${data.content}</a>`;
-                        rcvActions.innerHTML = `<button class="btn btn-primary" onclick="window.open('${data.content}', '_blank')">Open Link</button>`;
-                        window.open(data.content, '_blank'); // Auto-launch
+                        rcvBody.innerHTML = `<strong>URL:</strong><br><a href="${data.content}" target="_blank" style="color:#667eea;">${data.content}</a>`;
+                        const linkBtn = document.createElement('button');
+                        linkBtn.className = 'btn btn-primary';
+                        linkBtn.innerText = '🚀 Open Website';
+                        linkBtn.onclick = () => window.open(data.content, '_blank');
+                        rcvActions.appendChild(linkBtn);
+                        
+                        // Attempt popup launch
+                        const pop = window.open(data.content, '_blank');
+                        if (!pop) {
+                            rcvActions.insertAdjacentHTML('afterbegin', '<p style="color:#666; font-size:0.85em; margin-bottom:8px;">(Tap button below to launch link)</p>');
+                        }
                     } 
-                    // Handle Address Logic
+                    // 3. Address Handling
                     else if (data.type === 'address') {
-                        rcvBody.innerHTML = `<strong>Address:</strong><br>${data.content.replace(/\\n/g, '<br>')}`;
+                        rcvBody.innerHTML = `<strong>Address:</strong><br>${data.content.replace(/\n/g, '<br>')}`;
                         const saveBtn = document.createElement('button');
                         saveBtn.className = 'btn btn-success';
-                        saveBtn.innerText = 'Save to Contacts';
+                        saveBtn.innerText = '💾 Save to Contacts (.vcf)';
                         saveBtn.onclick = () => saveAsVCard(data.content);
                         rcvActions.appendChild(saveBtn);
                     } 
-                    // Handle Text Logic
+                    // 4. Text Handling
                     else if (data.type === 'text') {
-                        rcvBody.innerHTML = `<strong>Text:</strong><br>${data.content.replace(/\\n/g, '<br>')}`;
+                        rcvBody.innerHTML = `<strong>Text:</strong><br>${data.content.replace(/\n/g, '<br>')}`;
                         const copyBtn = document.createElement('button');
                         copyBtn.className = 'btn btn-primary';
-                        copyBtn.innerText = 'Copy to Clipboard';
+                        copyBtn.innerText = '📋 Copy Text';
                         copyBtn.onclick = () => {
                             navigator.clipboard.writeText(data.content);
-                            copyBtn.innerText = 'Copied!';
+                            copyBtn.innerText = '✓ Copied!';
                         };
                         rcvActions.appendChild(copyBtn);
                     }
                 });
                 
                 activeConnection.on('error', () => { 
-                    document.getElementById('receive-status').innerText = 'Connection lost.'; 
+                    document.getElementById('receive-status').innerText = 'Connection error.'; 
                 });
             });
         }
@@ -239,12 +270,12 @@
             btn.innerText = 'Generating...'; 
             btn.disabled = true;
             
-            peerInstance = new Peer();
+            peerInstance = new Peer(peerConfig);
+            
             peerInstance.on('open', (id) => {
                 document.getElementById('p2p-qr-container').style.display = 'block';
                 document.getElementById('qrcode').innerHTML = '';
                 
-                // Generate QR pointing to this exact URL + the peer ID
                 const currentUrl = window.location.href.split('?')[0];
                 new QRCode(document.getElementById("qrcode"), { 
                     text: currentUrl + '?receive_peer=' + id, 
@@ -256,17 +287,32 @@
             
             peerInstance.on('connection', (conn) => {
                 activeConnection = conn;
-                activeConnection.on('open', () => {
+
+                function setSenderConnected() {
                     const status = document.getElementById('p2p-conn-status');
                     status.innerText = "✅ Device Connected! Ready to send.";
                     status.style.color = "#28a745";
                     document.getElementById('p2p-send-controls').style.display = 'block';
+                }
+
+                // Check state directly
+                if (conn.open) {
+                    setSenderConnected();
+                } else {
+                    conn.on('open', setSenderConnected);
+                }
+
+                // Listen for handshake ping from receiver
+                conn.on('data', (data) => {
+                    if (data && data.type === 'HANDSHAKE_PING') {
+                        setSenderConnected();
+                    }
                 });
             });
         }
 
         async function sendData() {
-            if (!activeConnection) return;
+            if (!activeConnection) return alert("Receiver is not connected yet.");
             
             const type = document.getElementById('share-type').value;
             let payload = { type: type };
@@ -274,34 +320,33 @@
             if (type === 'file') {
                 const file = document.getElementById('p2p-file').files[0];
                 if (!file) return alert("Please select a file.");
-                // Retaining the exact arrayBuffer logic from the original script
                 payload.file = await file.arrayBuffer();
                 payload.name = file.name;
             } else if (type === 'url') {
                 let rawUrl = document.getElementById('p2p-url').value.trim();
-                if (!rawUrl) return;
+                if (!rawUrl) return alert("Please enter a URL.");
                 
-                // Check if the URL starts with http:// or https://. If not, add it.
+                // Format relative URLs into absolute URLs
                 if (!/^https?:\/\//i.test(rawUrl)) {
                     rawUrl = 'https://' + rawUrl;
                 }
                 payload.content = rawUrl;
             } else if (type === 'address') {
-                payload.content = document.getElementById('p2p-address').value;
-                if (!payload.content) return;
+                payload.content = document.getElementById('p2p-address').value.trim();
+                if (!payload.content) return alert("Please enter an address.");
             } else if (type === 'text') {
-                payload.content = document.getElementById('p2p-text').value;
-                if (!payload.content) return;
+                payload.content = document.getElementById('p2p-text').value.trim();
+                if (!payload.content) return alert("Please enter text.");
             }
 
             activeConnection.send(payload);
             
             const status = document.getElementById('send-status');
             status.style.display = 'block';
-            setTimeout(() => status.style.display = 'none', 3000);
+            setTimeout(() => status.style.display = 'none', 4000);
         }
 
-        // --- UTILITY FUNCTIONS ---
+        // --- HELPERS ---
         function downloadFile(fileBytes, filename) {
             const blob = new Blob([fileBytes]);
             const url = window.URL.createObjectURL(blob);
@@ -315,8 +360,8 @@
         }
 
         function saveAsVCard(addressText) {
-            const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:Shared Address\nADR:;;${addressText.replace(/\\n/g, ', ')}\nEND:VCARD`;
-            const blob = new Blob([vcard], { type: 'text/vcard' });
+            const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:Shared Address\nADR:;;${addressText.replace(/\n/g, ', ')}\nEND:VCARD`;
+            const blob = new Blob([vcard], { type: 'text/vcard;charset=utf-8;' });
             const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
