@@ -120,7 +120,6 @@
         .bg-blue { background: #dbeafe; color: #1e40af; }
         .bg-gray { background: #e2e8f0; color: #475569; }
 
-        /* Dynamic Peer List UI */
         #peer-list-container { margin: 15px 0; display: none; }
         .peer-list-item {
             display: flex; justify-content: space-between; align-items: center;
@@ -128,9 +127,10 @@
             margin-bottom: 8px; font-size: 0.9em; border: 1px solid var(--border-color);
         }
 
+        /* Dynamic Progress Containers */
+        #progress-container { margin: 15px 0; display: flex; flex-direction: column; gap: 10px; }
         .progress-box {
-            display: none; margin: 15px 0; background: #f8fafc; padding: 12px;
-            border-radius: 8px; border: 1px solid var(--border-color);
+            background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color);
         }
         .progress-bar-bg {
             background: #e2e8f0; border-radius: 6px; height: 10px; overflow: hidden; margin-top: 6px;
@@ -178,9 +178,7 @@
                     <span id="peer-count-badge" class="badge bg-gray">0 Devices Connected</span>
                 </div>
 
-                <div id="peer-list-container">
-                    <!-- Javascript populates active devices here -->
-                </div>
+                <div id="peer-list-container"></div>
             </div>
 
             <!-- Receiver Status Banner -->
@@ -202,7 +200,7 @@
                 <div class="input-group">
                     <label>Transfer Type</label>
                     <select id="share-type" onchange="toggleInputFields()">
-                        <option value="file">File (Unlimited Size Chunk Stream)</option>
+                        <option value="file">File (Resumable Pull Stream)</option>
                         <option value="url">URL / Web Link</option>
                         <option value="address">Physical Address</option>
                         <option value="text">Message / Raw Text</option>
@@ -222,15 +220,8 @@
                     <textarea id="p2p-text" rows="3" placeholder="Type plain text message..."></textarea>
                 </div>
 
-                <div id="transfer-progress-box" class="progress-box">
-                    <div style="display: flex; justify-content: space-between; font-size: 0.85em; font-weight: 600;">
-                        <span id="progress-status">Streaming...</span>
-                        <span id="progress-percent">0%</span>
-                    </div>
-                    <div class="progress-bar-bg">
-                        <div id="progress-bar" class="progress-bar-fill"></div>
-                    </div>
-                </div>
+                <!-- Dynamic Progress Bars inject here -->
+                <div id="progress-container"></div>
 
                 <button class="btn btn-primary" id="send-btn" onclick="initiateTransfer()">Send Data</button>
             </div>
@@ -252,20 +243,21 @@
     </div>
 
     <script>
-        const CHUNK_SIZE = 64 * 1024; 
+        const CHUNK_SIZE = 64 * 1024; // 64KB
         let peerInstance = null;
         
-        // HOST VARS: Map of deviceId -> { conn, name, distance }
+        // Maps devId to connections
         let connectedPeers = new Map(); 
-        
-        // CLIENT VARS: Single connection back to Host
         let hostConnection = null; 
+
+        // Transfer Data Memory
+        let sharedFiles = new Map(); // Holds files being hosted by this device
+        let incomingStreams = {};    // Holds buffers of files being downloaded
 
         let sessionPin = Math.random().toString(36).substring(2, 8).toUpperCase();
         let isHost = true;
         let myLocation = null;
         let inboxCounter = 0;
-        let incomingStreams = {};
 
         const peerConfig = {
             config: {
@@ -276,7 +268,7 @@
             }
         };
 
-        // --- IDENTITY MANAGEMENT (Fixes Phantom/Refresh Issues) ---
+        // --- IDENTITY MANAGEMENT ---
         function getMyDeviceId() {
             let id = localStorage.getItem('hyper_share_id');
             if (!id) {
@@ -307,7 +299,6 @@
             const receivePeer = urlParams.get('receive_peer');
             const pin = urlParams.get('pin');
 
-            // Force location fetch early
             getGeo(loc => { myLocation = loc; });
 
             if (receivePeer && pin) {
@@ -360,7 +351,6 @@
             peerInstance.on('connection', (conn) => {
                 conn.on('data', (data) => handleHostIncoming(conn, data));
                 conn.on('close', () => {
-                    // Only delete if the disconnected conn is the exact object mapped (handles refresh races)
                     if (conn.devId && connectedPeers.has(conn.devId)) {
                         if (connectedPeers.get(conn.devId).conn === conn) {
                             connectedPeers.delete(conn.devId);
@@ -376,21 +366,17 @@
             if (data.type === 'HANDSHAKE') {
                 if (data.pin === sessionPin) {
                     const devId = data.deviceId;
-                    
-                    // Kill phantom connections on refresh
                     if (connectedPeers.has(devId)) {
-                        addLog(`Reconnecting existing device: ${data.deviceName}`);
                         try { connectedPeers.get(devId).conn.close(); } catch(e){}
-                    } else {
-                        addLog(`Authenticated: ${data.deviceName}`);
                     }
-
-                    conn.devId = devId; // Tag connection object
+                    conn.devId = devId;
                     connectedPeers.set(devId, { conn: conn, name: data.deviceName, distance: 'Calculating...' });
-                    
                     updateHostUI();
                     document.getElementById('send-controls').style.display = 'block';
                     conn.send({ type: 'GEO_REQ' });
+                    
+                    // Auto-Resume any interrupted pulls
+                    resumeInterruptedTransfers(conn);
                 } else {
                     conn.send({ type: 'ERROR', msg: 'Invalid PIN' });
                     conn.close();
@@ -405,16 +391,13 @@
                     if (data.loc && myLocation) {
                         const meters = calcDistance(myLocation.lat, myLocation.lon, data.loc.lat, data.loc.lon);
                         peer.distance = meters < 1000 ? `~${Math.round(meters)}m` : `~${(meters / 1000).toFixed(1)}km`;
-                    } else {
-                        peer.distance = 'Location Denied';
-                    }
+                    } else { peer.distance = 'Location Denied'; }
                     updateHostUI();
                 }
                 return;
             }
 
-            // Treat any other data as an incoming payload from Receiver (Two-Way Bridge)
-            processStandardPayload(data);
+            processStandardPayload(conn, data);
         }
 
         function updateHostUI() {
@@ -457,17 +440,17 @@
                 
                 hostConnection.on('open', () => {
                     hostConnection.send({ 
-                        type: 'HANDSHAKE', 
-                        pin: targetPin, 
-                        deviceId: getMyDeviceId(),
-                        deviceName: getMyDeviceName()
+                        type: 'HANDSHAKE', pin: targetPin, 
+                        deviceId: getMyDeviceId(), deviceName: getMyDeviceName()
                     });
                     
-                    const badge = document.getElementById('client-conn-badge');
-                    badge.className = 'badge bg-green';
-                    badge.innerText = '✅ Connected to Host';
-                    addLog('Secured connection to Host established.');
+                    document.getElementById('client-conn-badge').className = 'badge bg-green';
+                    document.getElementById('client-conn-badge').innerText = '✅ Connected to Host';
                     document.getElementById('send-controls').style.display = 'block';
+                    addLog('Secured connection established.');
+
+                    // Auto-Resume any interrupted pulls
+                    resumeInterruptedTransfers(hostConnection);
                 });
 
                 hostConnection.on('data', (data) => {
@@ -476,71 +459,118 @@
                         return;
                     }
                     if (data.type === 'ERROR') return alert(data.msg);
-                    
-                    processStandardPayload(data);
+                    processStandardPayload(hostConnection, data);
                 });
 
                 hostConnection.on('close', () => {
                     hostConnection = null;
-                    const badge = document.getElementById('client-conn-badge');
-                    badge.className = 'badge bg-red';
-                    badge.innerText = '❌ Disconnected from Host';
+                    document.getElementById('client-conn-badge').className = 'badge bg-red';
+                    document.getElementById('client-conn-badge').innerText = '❌ Disconnected (Auto-Reconnecting...)';
                     document.getElementById('send-controls').style.display = 'none';
-                    addLog('Connection closed by host.', true);
+                    addLog('Connection closed. Refresh page to re-join.', true);
                 });
             });
         }
 
-        // --- CORE DATA PROCESSING (Used by both Host & Client) ---
-        function processStandardPayload(data) {
-            if (data.type === 'FILE_HEADER') {
-                incomingStreams[data.transferId] = { name: data.name, size: data.size, mime: data.mime, received: 0, chunks: [] };
-                showProgressUI(`Receiving: ${data.name}`, 0);
-                return;
-            }
+        // --- PULL-BASED FILE PROTOCOL & PAYLOADS ---
+        function resumeInterruptedTransfers(conn) {
+            Object.keys(incomingStreams).forEach(transferId => {
+                const stream = incomingStreams[transferId];
+                const nextIdx = stream.chunks.length;
+                if (nextIdx < stream.totalChunks) {
+                    conn.send({ type: 'CHUNK_REQ', transferId, index: nextIdx });
+                    addLog(`Resuming download: ${stream.name}`);
+                }
+            });
+        }
 
-            if (data.type === 'FILE_CHUNK') {
-                const stream = incomingStreams[data.transferId];
-                if (!stream) return;
-                stream.chunks.push(data.chunk);
-                stream.received += data.chunk.byteLength;
-
-                const percent = Math.round((stream.received / stream.size) * 100);
-                showProgressUI(`Receiving: ${stream.name}`, percent);
-
-                if (stream.received >= stream.size) {
-                    const blob = new Blob(stream.chunks, { type: stream.mime || 'application/octet-stream' });
-                    renderInboxCard({ type: 'file', fileBlob: blob, name: stream.name });
-                    addLog(`Received File: ${stream.name} (${(stream.size / 1024 / 1024).toFixed(2)} MB)`);
-                    delete incomingStreams[data.transferId];
-                    hideProgressUI();
+        function processStandardPayload(conn, data) {
+            // RECEIVER side: Getting a file offer, initiates pull
+            if (data.type === 'FILE_OFFER') {
+                if (!incomingStreams[data.transferId]) {
+                    incomingStreams[data.transferId] = { 
+                        name: data.name, size: data.size, mime: data.mime, 
+                        totalChunks: data.totalChunks, chunks: [] 
+                    };
+                }
+                const nextIdx = incomingStreams[data.transferId].chunks.length;
+                if (nextIdx < data.totalChunks) {
+                    conn.send({ type: 'CHUNK_REQ', transferId: data.transferId, index: nextIdx });
+                    showProgressUI(data.transferId, `Downloading: ${data.name}`, Math.round((nextIdx/data.totalChunks)*100));
                 }
                 return;
             }
 
+            // SENDER side: Fulfilling a chunk request (Tracks true receiver progress)
+            if (data.type === 'CHUNK_REQ') {
+                const sf = sharedFiles.get(data.transferId);
+                if (!sf) {
+                    conn.send({ type: 'FILE_ERROR', transferId: data.transferId, msg: 'File no longer available on host.' });
+                    return;
+                }
+                
+                const percent = Math.round(((data.index + 1) / sf.totalChunks) * 100);
+                showProgressUI(data.transferId, `Uploading: ${sf.name}`, percent);
+
+                const start = data.index * CHUNK_SIZE;
+                const end = Math.min(start + CHUNK_SIZE, sf.size);
+                
+                sf.file.slice(start, end).arrayBuffer().then(buffer => {
+                    conn.send({ type: 'FILE_CHUNK', transferId: data.transferId, index: data.index, chunk: buffer });
+                });
+                return;
+            }
+
+            // RECEIVER side: Receiving a pulled chunk
+            if (data.type === 'FILE_CHUNK') {
+                const stream = incomingStreams[data.transferId];
+                if (!stream) return;
+                
+                // Ensure sequence is maintained (prevents duplicate storage)
+                if (data.index === stream.chunks.length) {
+                    stream.chunks.push(data.chunk);
+                    const percent = Math.round((stream.chunks.length / stream.totalChunks) * 100);
+                    showProgressUI(data.transferId, `Downloading: ${stream.name}`, percent);
+
+                    if (stream.chunks.length >= stream.totalChunks) {
+                        const blob = new Blob(stream.chunks, { type: stream.mime || 'application/octet-stream' });
+                        renderInboxCard({ type: 'file', fileBlob: blob, name: stream.name });
+                        addLog(`Received File: ${stream.name}`);
+                        delete incomingStreams[data.transferId];
+                        hideProgressUI(data.transferId);
+                    } else {
+                        // Request the very next piece securely
+                        conn.send({ type: 'CHUNK_REQ', transferId: data.transferId, index: data.index + 1 });
+                    }
+                }
+                return;
+            }
+
+            if (data.type === 'FILE_ERROR') {
+                alert(data.msg);
+                delete incomingStreams[data.transferId];
+                hideProgressUI(data.transferId);
+                return;
+            }
+
+            // Simple Payloads
             if (['url', 'text', 'address'].includes(data.type)) {
                 renderInboxCard(data);
                 addLog(`Received ${data.type.toUpperCase()}`);
             }
         }
 
-        // --- NETWORK SENDER PIPELINE ---
+        // --- INITIATE TRANSFERS ---
         function safeSendToTargets(payload, targetId = 'ALL') {
             if (isHost) {
                 if (targetId === 'ALL') {
-                    connectedPeers.forEach(peer => {
-                        try { if (peer.conn.open) peer.conn.send(payload); } catch(e){}
-                    });
+                    connectedPeers.forEach(peer => { try { if (peer.conn.open) peer.conn.send(payload); } catch(e){} });
                 } else {
                     if (connectedPeers.has(targetId)) {
-                        try { 
-                            let p = connectedPeers.get(targetId);
-                            if (p.conn.open) p.conn.send(payload); 
-                        } catch(e){}
+                        try { let p = connectedPeers.get(targetId); if (p.conn.open) p.conn.send(payload); } catch(e){}
                     }
                 }
             } else {
-                // Client always sends back to host
                 if (hostConnection && hostConnection.open) hostConnection.send(payload);
             }
         }
@@ -550,17 +580,23 @@
             if (!isHost && (!hostConnection || !hostConnection.open)) return alert("Not connected to host.");
 
             const type = document.getElementById('share-type').value;
-            const btn = document.getElementById('send-btn');
             const targetId = isHost ? document.getElementById('target-device').value : 'ALL';
 
             if (type === 'file') {
                 const file = document.getElementById('p2p-file').files[0];
                 if (!file) return alert("Select a file to transfer.");
 
-                btn.disabled = true;
-                await streamFileToMesh(file, targetId);
+                // Register file in memory so peers can pull it
+                const transferId = Math.random().toString(36).substring(2, 9);
+                const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+                sharedFiles.set(transferId, { file: file, name: file.name, size: file.size, totalChunks: totalChunks, mime: file.type });
+
+                // Dispatch the Offer
+                safeSendToTargets({ type: 'FILE_OFFER', transferId, name: file.name, size: file.size, totalChunks, mime: file.type }, targetId);
+                showProgressUI(transferId, `Waiting for receiver to pull: ${file.name}`, 0);
+                
                 document.getElementById('p2p-file').value = '';
-                btn.disabled = false;
+                addLog(`Offered File to Mesh: ${file.name}`);
             } else {
                 let payload = { type: type };
                 if (type === 'url') {
@@ -581,40 +617,38 @@
             }
         }
 
-        async function streamFileToMesh(file, targetId) {
-            const transferId = Math.random().toString(36).substring(2, 9);
-            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-
-            safeSendToTargets({ type: 'FILE_HEADER', transferId: transferId, name: file.name, size: file.size, mime: file.type }, targetId);
-            showProgressUI(`Transferring: ${file.name}`, 0);
-
-            for (let i = 0; i < totalChunks; i++) {
-                const start = i * CHUNK_SIZE;
-                const end = Math.min(start + CHUNK_SIZE, file.size);
-                const chunkBuffer = await file.slice(start, end).arrayBuffer();
-
-                safeSendToTargets({ type: 'FILE_CHUNK', transferId: transferId, chunk: chunkBuffer }, targetId);
-                const percent = Math.round(((i + 1) / totalChunks) * 100);
-                showProgressUI(`Transferring: ${file.name}`, percent);
+        // --- DYNAMIC PROGRESS BARS UI ---
+        function showProgressUI(transferId, status, percent) {
+            let container = document.getElementById('progress-container');
+            let box = document.getElementById(`prog-${transferId}`);
+            
+            if (!box) {
+                box = document.createElement('div');
+                box.id = `prog-${transferId}`;
+                box.className = 'progress-box';
+                box.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85em; font-weight: 600;">
+                        <span id="status-${transferId}">${status}</span>
+                        <span id="percent-${transferId}">${percent}%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div id="bar-${transferId}" class="progress-bar-fill" style="width: ${percent}%;"></div>
+                    </div>
+                `;
+                container.appendChild(box);
+            } else {
+                document.getElementById(`status-${transferId}`).innerText = status;
+                document.getElementById(`percent-${transferId}`).innerText = `${percent}%`;
+                document.getElementById(`bar-${transferId}`).style.width = `${percent}%`;
             }
-
-            addLog(`Sent File: ${file.name}`);
-            hideProgressUI();
         }
 
-        // --- UI HELPERS ---
-        function showProgressUI(status, percent) {
-            const box = document.getElementById('transfer-progress-box');
-            box.style.display = 'block';
-            document.getElementById('progress-status').innerText = status;
-            document.getElementById('progress-percent').innerText = `${percent}%`;
-            document.getElementById('progress-bar').style.width = `${percent}%`;
+        function hideProgressUI(transferId) {
+            const box = document.getElementById(`prog-${transferId}`);
+            if (box) setTimeout(() => { box.remove(); }, 1500); // Remove cleanly after 1.5 seconds
         }
 
-        function hideProgressUI() {
-            setTimeout(() => { document.getElementById('transfer-progress-box').style.display = 'none'; }, 1000);
-        }
-
+        // --- INBOX & UTILS ---
         function renderInboxCard(data) {
             document.getElementById('empty-inbox-msg').style.display = 'none';
             inboxCounter++;
@@ -658,7 +692,6 @@
             stack.prepend(card);
         }
 
-        // --- MATH & EXPORTS ---
         function calcDistance(lat1, lon1, lat2, lon2) {
             const R = 6371e3;
             const f1 = lat1 * Math.PI / 180, f2 = lat2 * Math.PI / 180;
