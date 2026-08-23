@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Wi-Fi Share</title>
+    <title>P2P HyperShare Pro</title>
     
     <!-- Core Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
@@ -12,202 +12,234 @@
     <style>
         :root {
             --bg-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-            --container-bg: white;
-            --text-main: #333;
-            --border-color: #e5e7eb;
-            --active-tab: #4f46e5;
+            --container-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --success: #10b981;
+            --danger: #ef4444;
         }
 
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background: var(--bg-gradient);
             min-height: 100vh;
-            padding: 20px;
+            padding: 15px;
             color: var(--text-main);
-            margin: 0;
             display: flex;
             justify-content: center;
             align-items: center;
         }
 
-        .container {
+        .app-container {
             background: var(--container-bg);
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
             width: 100%;
             max-width: 600px;
             overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
-        /* Tabs Styling */
         .tabs {
             display: flex;
             background: #f8fafc;
             border-bottom: 1px solid var(--border-color);
         }
+
         .tab-btn {
             flex: 1;
-            padding: 15px;
+            padding: 14px;
             border: none;
             background: none;
             font-weight: 600;
-            color: #64748b;
+            color: var(--text-muted);
             cursor: pointer;
-            transition: all 0.3s ease;
-            font-size: 1.05em;
+            transition: all 0.2s;
+            font-size: 0.95em;
         }
+
         .tab-btn.active {
-            color: var(--active-tab);
-            border-bottom: 3px solid var(--active-tab);
-            background: white;
+            color: var(--primary);
+            border-bottom: 3px solid var(--primary);
+            background: #ffffff;
         }
-        .tab-content { display: none; padding: 30px; }
+
+        .tab-content { display: none; padding: 20px; }
         .tab-content.active { display: block; }
 
-        h2, h3 { color: var(--active-tab); margin-top: 0; text-align: center; }
+        h2, h3 { color: var(--primary); text-align: center; margin-bottom: 10px; }
 
         .btn {
-            padding: 12px 24px;
+            padding: 12px 18px;
             border: none;
             border-radius: 8px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s;
             width: 100%;
-            font-size: 1em;
-            margin-bottom: 10px;
+            font-size: 0.95em;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-decoration: none;
         }
-        .btn-primary { background: var(--active-tab); color: white; }
-        .btn-primary:hover { background: #4338ca; }
-        .btn-secondary { background: #f1f5f9; color: #333; border: 1px solid var(--border-color); }
-        .btn-secondary:hover { background: #e2e8f0; }
-        .btn-success { background: #10b981; color: white; }
 
-        .input-group { margin-bottom: 15px; }
-        .input-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-secondary { background: #f1f5f9; color: var(--text-main); border: 1px solid var(--border-color); }
+        .btn-secondary:hover { background: #e2e8f0; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-sm { padding: 8px 12px; font-size: 0.85em; width: auto; }
+
+        .input-group { margin-bottom: 14px; }
+        .input-group label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.85em; color: var(--text-muted); }
         .input-group select, .input-group input, .input-group textarea {
             width: 100%; padding: 10px; border: 1px solid var(--border-color);
-            border-radius: 6px; box-sizing: border-box; font-family: inherit;
+            border-radius: 8px; font-family: inherit; font-size: 0.95em;
         }
 
         #qrcode {
-            background: white; padding: 15px; border-radius: 8px;
-            display: inline-block; margin: 15px auto; border: 1px solid var(--border-color);
+            background: white; padding: 12px; border-radius: 8px;
+            display: inline-block; margin: 10px auto; border: 1px solid var(--border-color);
         }
 
-        /* Status & Badges */
         .badge {
-            display: inline-block; padding: 4px 8px; border-radius: 4px;
-            font-size: 0.8em; font-weight: bold; margin-top: 5px;
+            display: inline-block; padding: 4px 10px; border-radius: 20px;
+            font-size: 0.8em; font-weight: 600;
         }
         .bg-green { background: #d1fae5; color: #065f46; }
         .bg-yellow { background: #fef3c7; color: #92400e; }
         .bg-red { background: #fee2e2; color: #991b1b; }
         .bg-blue { background: #dbeafe; color: #1e40af; }
 
-        /* Log Table */
-        .log-container { max-height: 400px; overflow-y: auto; }
-        .log-item {
-            padding: 10px; border-bottom: 1px solid var(--border-color);
-            font-size: 0.9em; display: flex; flex-direction: column; gap: 4px;
+        .progress-box {
+            display: none; margin: 15px 0; background: #f8fafc; padding: 12px;
+            border-radius: 8px; border: 1px solid var(--border-color);
         }
-        .log-item:last-child { border-bottom: none; }
-        .log-time { color: #64748b; font-size: 0.85em; }
+        .progress-bar-bg {
+            background: #e2e8f0; border-radius: 6px; height: 10px; overflow: hidden; margin-top: 6px;
+        }
+        .progress-bar-fill {
+            background: var(--primary); height: 100%; width: 0%; transition: width 0.1s linear;
+        }
 
-        /* Receiver Overlay */
-        .overlay {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: var(--bg-gradient); z-index: 1000;
-            flex-direction: column; align-items: center; justify-content: flex-start;
-            color: white; text-align: center; padding: 20px; box-sizing: border-box;
-            overflow-y: auto;
+        .log-container { max-height: 380px; overflow-y: auto; }
+        .log-item {
+            padding: 10px 0; border-bottom: 1px solid var(--border-color);
+            font-size: 0.88em; display: flex; flex-direction: column; gap: 2px;
         }
-        .receiver-card {
-            background: white; color: #333; padding: 20px; border-radius: 12px;
-            max-width: 400px; width: 100%; margin-bottom: 15px; text-align: left;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        .log-time { color: var(--text-muted); font-size: 0.8em; }
+
+        .card-stack {
+            display: flex; flex-direction: column; gap: 12px; max-height: 420px; overflow-y: auto;
+        }
+        .share-card {
+            background: #f8fafc; border: 1px solid var(--border-color);
+            padding: 14px; border-radius: 10px; text-align: left;
         }
     </style>
 </head>
 <body>
 
-    <!-- RECEIVER OVERLAY -->
-    <div id="receive-overlay" class="overlay">
-        <h2 style="color:white; margin-top: 20px;">📥 Connected Receiver</h2>
-        <div id="recv-status-badge" class="badge bg-yellow" style="margin-bottom: 15px;">Establishing Secure Connection...</div>
-        
-        <div id="received-stack" style="width: 100%; max-width: 400px; display: flex; flex-direction: column;"></div>
-
-        <button class="btn btn-secondary" style="margin-top: 20px; max-width: 200px;" onclick="window.location.href=window.location.href.split('?')[0]">Disconnect</button>
-    </div>
-
-    <!-- SENDER UI -->
-    <div class="container" id="sender-ui">
-        
+    <div class="app-container">
+        <!-- Tab Bar -->
         <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('tab-share')">📤 Share</button>
+            <button class="tab-btn active" onclick="switchTab('tab-share')">⚡ Share Console</button>
+            <button class="tab-btn" onclick="switchTab('tab-inbox')">📥 Received Items (<span id="inbox-count">0</span>)</button>
             <button class="tab-btn" onclick="switchTab('tab-logs')">📋 Activity Logs</button>
         </div>
 
-        <!-- SHARE TAB -->
+        <!-- SHARE CONSOLE TAB -->
         <div id="tab-share" class="tab-content active">
-            <div id="p2p-qr-container" style="text-align:center;">
-                <p style="margin:0; font-size:0.95em; color:#64748b;">Scan QR to securely connect</p>
+            <!-- Host QR Code Section (Only shown on primary host) -->
+            <div id="host-qr-section" style="text-align: center; margin-bottom: 15px;">
+                <p style="font-size: 0.9em; color: var(--text-muted);">Scan to connect additional devices:</p>
                 <div id="qrcode"></div>
-                
-                <div style="margin: 10px 0;">
-                    <span id="conn-status-badge" class="badge bg-yellow">Waiting for receiver...</span>
-                    <span id="dist-badge" class="badge bg-blue" style="display:none;">Distance: Estimating...</span>
+                <div style="display: flex; justify-content: center; gap: 6px; flex-wrap: wrap;">
+                    <span id="conn-status-badge" class="badge bg-yellow">Waiting for peers...</span>
+                    <span id="peer-count-badge" class="badge bg-blue">0 Devices Connected</span>
+                    <span id="dist-badge" class="badge bg-green" style="display: none;">Distance: Calculating...</span>
                 </div>
             </div>
-            
-            <div id="p2p-send-controls" style="display:none; text-align: left; margin-top: 20px; border-top: 1px solid #e5e7eb; padding-top: 20px;">
+
+            <!-- Receiver Status Banner (Shown if running in receiver mode) -->
+            <div id="receiver-status-section" style="display: none; text-align: center; margin-bottom: 15px;">
+                <span id="client-conn-badge" class="badge bg-yellow">Connecting to Host Mesh...</span>
+            </div>
+
+            <!-- Send Controls (Usable by both Host and Connected Receivers) -->
+            <div id="send-controls" style="border-top: 1px solid var(--border-color); padding-top: 15px;">
                 <div class="input-group">
-                    <label>What do you want to share?</label>
+                    <label>Transfer Type</label>
                     <select id="share-type" onchange="toggleInputFields()">
-                        <option value="file">File (Max 50MB)</option>
-                        <option value="url">URL / Link</option>
-                        <option value="address">Address</option>
-                        <option value="text">Raw Text</option>
+                        <option value="file">File (Unlimited Size Chunk Stream)</option>
+                        <option value="url">URL / Web Link</option>
+                        <option value="address">Physical Address</option>
+                        <option value="text">Message / Raw Text</option>
                     </select>
                 </div>
 
                 <div id="input-file" class="input-group">
                     <input type="file" id="p2p-file">
                 </div>
-                
-                <div id="input-url" class="input-group" style="display:none;">
-                    <input type="text" id="p2p-url" placeholder="example.com or https://example.com">
+                <div id="input-url" class="input-group" style="display: none;">
+                    <input type="text" id="p2p-url" placeholder="google.com or https://example.com">
+                </div>
+                <div id="input-address" class="input-group" style="display: none;">
+                    <textarea id="p2p-address" rows="3" placeholder="Enter street address..."></textarea>
+                </div>
+                <div id="input-text" class="input-group" style="display: none;">
+                    <textarea id="p2p-text" rows="3" placeholder="Type plain text message..."></textarea>
                 </div>
 
-                <div id="input-address" class="input-group" style="display:none;">
-                    <textarea id="p2p-address" rows="3" placeholder="Enter physical address..."></textarea>
+                <!-- Progress Bar Component -->
+                <div id="transfer-progress-box" class="progress-box">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85em; font-weight: 600;">
+                        <span id="progress-status">Streaming file...</span>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div id="progress-bar" class="progress-bar-fill"></div>
+                    </div>
                 </div>
 
-                <div id="input-text" class="input-group" style="display:none;">
-                    <textarea id="p2p-text" rows="4" placeholder="Type message here..."></textarea>
-                </div>
-
-                <button class="btn btn-primary" id="send-btn" onclick="sendData()">Send to Device</button>
+                <button class="btn btn-primary" id="send-btn" onclick="initiateTransfer()">Send / Broadcast to Mesh</button>
             </div>
         </div>
 
-        <!-- LOGS TAB -->
-        <div id="tab-logs" class="tab-content">
-            <h3 style="text-align:left; margin-bottom: 15px;">Session Activity</h3>
-            <div class="log-container" id="log-list">
-                <!-- Logs will appear here -->
+        <!-- RECEIVED ITEMS TAB -->
+        <div id="tab-inbox" class="tab-content">
+            <h3 style="text-align: left;">Inbox Stack</h3>
+            <div id="inbox-stack" class="card-stack">
+                <p id="empty-inbox-msg" style="color: var(--text-muted); text-align: center; padding: 20px;">No items received yet.</p>
             </div>
+        </div>
+
+        <!-- ACTIVITY LOGS TAB -->
+        <div id="tab-logs" class="tab-content">
+            <h3 style="text-align: left;">Session Audit Trail</h3>
+            <div class="log-container" id="log-list"></div>
         </div>
     </div>
 
     <script>
+        const CHUNK_SIZE = 64 * 1024; // 64KB chunks for smooth streaming
         let peerInstance = null;
-        let activeConnection = null;
-        let sessionPin = Math.random().toString(36).substring(2, 8).toUpperCase(); // Secure PIN for reconnects
+        let connections = []; // Stores all active peer connection instances
+        let sessionPin = Math.random().toString(36).substring(2, 8).toUpperCase();
+        let isHost = true;
         let myLocation = null;
+        let inboxCounter = 0;
 
-        const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+        // Active incoming stream buffers mapped by transferId
+        let incomingStreams = {};
 
         const peerConfig = {
             config: {
@@ -218,23 +250,27 @@
             }
         };
 
-        // Initialize immediately on load
         window.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('receive_peer')) {
-                document.getElementById('sender-ui').style.display = 'none';
-                initReceiver(urlParams);
+            const receivePeer = urlParams.get('receive_peer');
+            const pin = urlParams.get('pin');
+
+            if (receivePeer && pin) {
+                isHost = false;
+                document.getElementById('host-qr-section').style.display = 'none';
+                document.getElementById('receiver-status-section').style.display = 'block';
+                initClient(receivePeer, pin);
             } else {
-                initSender();
+                initHost();
             }
         });
 
-        // --- UI UTILS ---
+        // --- TAB CONTROLLER ---
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
-            event.target.classList.add('active');
+            event.currentTarget.classList.add('active');
         }
 
         function toggleInputFields() {
@@ -244,248 +280,330 @@
             });
         }
 
-        function addLog(message, isSuccess = true) {
-            const logList = document.getElementById('log-list');
+        function addLog(msg, isErr = false) {
+            const list = document.getElementById('log-list');
             const now = new Date().toLocaleTimeString();
-            const color = isSuccess ? '#333' : '#991b1b';
-            const logHTML = `
-                <div class="log-item">
-                    <span style="color: ${color}; font-weight: 500;">${message}</span>
-                    <span class="log-time">${now}</span>
-                </div>
+            const el = document.createElement('div');
+            el.className = 'log-item';
+            el.innerHTML = `
+                <span style="color: ${isErr ? '#ef4444' : '#1e293b'}; font-weight: 500;">${msg}</span>
+                <span class="log-time">${now}</span>
             `;
-            logList.insertAdjacentHTML('afterbegin', logHTML); // Prepend
+            list.prepend(el);
         }
 
-        function getDeviceName(agentStr) {
-            if (/windows phone/i.test(agentStr)) return "Windows Phone";
-            if (/android/i.test(agentStr)) return "Android";
-            if (/iPad|iPhone|iPod/.test(agentStr) && !window.MSStream) return "iOS Device";
-            if (/Mac OS/.test(agentStr)) return "Mac";
-            if (/Windows/.test(agentStr)) return "Windows PC";
-            return "Unknown Device";
+        function updatePeerCountUI() {
+            if (isHost) {
+                const badge = document.getElementById('peer-count-badge');
+                const connBadge = document.getElementById('conn-status-badge');
+                badge.innerText = `${connections.length} Device(s) Connected`;
+                if (connections.length > 0) {
+                    connBadge.className = 'badge bg-green';
+                    connBadge.innerText = 'Mesh Active';
+                } else {
+                    connBadge.className = 'badge bg-yellow';
+                    connBadge.innerText = 'Waiting for peers...';
+                    document.getElementById('dist-badge').style.display = 'none';
+                }
+            }
         }
 
-        // --- GEOLOCATION MATH (HAVERSINE) ---
+        function getDeviceName(agent) {
+            if (/android/i.test(agent)) return "Android";
+            if (/iPad|iPhone|iPod/.test(agent)) return "iOS Device";
+            if (/Mac OS/.test(agent)) return "Mac";
+            if (/Windows/.test(agent)) return "Windows PC";
+            return "Web Peer";
+        }
+
+        // --- GEOLOCATION HELPER (HAVERSINE) ---
         function calcDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371e3; // metres
-            const f1 = lat1 * Math.PI/180;
-            const f2 = lat2 * Math.PI/180;
-            const df = (lat2-lat1) * Math.PI/180;
-            const dl = (lon2-lon1) * Math.PI/180;
-            const a = Math.sin(df/2) * Math.sin(df/2) + Math.cos(f1) * Math.cos(f2) * Math.sin(dl/2) * Math.sin(dl/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c; 
+            const R = 6371e3;
+            const f1 = lat1 * Math.PI / 180, f2 = lat2 * Math.PI / 180;
+            const df = (lat2 - lat1) * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(df / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         }
 
-        function requestLocation(callback) {
+        function getGeo(callback) {
             if ("geolocation" in navigator) {
                 navigator.geolocation.getCurrentPosition(
                     pos => callback({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-                    err => callback(null)
+                    () => callback(null),
+                    { timeout: 5000 }
                 );
-            } else {
-                callback(null);
+            } else { callback(null); }
+        }
+
+        // --- HOST CORE ---
+        function initHost() {
+            addLog(`Session created. PIN: ${sessionPin}`);
+            peerInstance = new Peer(peerConfig);
+            getGeo(loc => { myLocation = loc; });
+
+            peerInstance.on('open', (id) => {
+                const link = `${window.location.href.split('?')[0]}?receive_peer=${id}&pin=${sessionPin}`;
+                new QRCode(document.getElementById("qrcode"), { text: link, width: 200, height: 200 });
+            });
+
+            peerInstance.on('connection', (conn) => {
+                conn.on('data', (data) => handleIncomingProtocol(conn, data));
+                conn.on('close', () => {
+                    connections = connections.filter(c => c.peer !== conn.peer);
+                    updatePeerCountUI();
+                    addLog(`Peer disconnected.`);
+                });
+            });
+        }
+
+        // --- CLIENT CORE ---
+        function initClient(targetHostId, targetPin) {
+            peerInstance = new Peer(peerConfig);
+            peerInstance.on('open', () => {
+                const conn = peerInstance.connect(targetHostId);
+                conn.on('open', () => {
+                    conn.send({ type: 'HANDSHAKE', pin: targetPin, agent: navigator.userAgent });
+                    connections = [conn];
+                    const badge = document.getElementById('client-conn-badge');
+                    badge.className = 'badge bg-green';
+                    badge.innerText = '✅ Connected to Host Mesh';
+                    addLog('Secured connection to Host established.');
+                });
+
+                conn.on('data', (data) => handleIncomingProtocol(conn, data));
+                conn.on('close', () => {
+                    connections = [];
+                    const badge = document.getElementById('client-conn-badge');
+                    badge.className = 'badge bg-red';
+                    badge.innerText = '❌ Disconnected from Host';
+                    addLog('Connection closed by host.', true);
+                });
+            });
+        }
+
+        // --- DATA PROTOCOL HANDLER ---
+        function handleIncomingProtocol(conn, data) {
+            // Handshake & Security
+            if (data.type === 'HANDSHAKE') {
+                if (data.pin === sessionPin) {
+                    connections.push(conn);
+                    updatePeerCountUI();
+                    addLog(`Authenticated: ${getDeviceName(data.agent)}`);
+                    conn.send({ type: 'GEO_REQ' });
+                } else {
+                    conn.send({ type: 'ERROR', msg: 'Invalid Authentication PIN' });
+                    conn.close();
+                }
+                return;
+            }
+
+            // Geolocation Distance Handshake
+            if (data.type === 'GEO_REQ') {
+                getGeo(loc => { if (loc) conn.send({ type: 'GEO_RES', loc: loc }); });
+                return;
+            }
+            if (data.type === 'GEO_RES' && data.loc && myLocation) {
+                const meters = calcDistance(myLocation.lat, myLocation.lon, data.loc.lat, data.loc.lon);
+                const badge = document.getElementById('dist-badge');
+                badge.style.display = 'inline-block';
+                badge.innerText = meters < 1000 ? `📍 ~${Math.round(meters)}m away` : `📍 ~${(meters / 1000).toFixed(1)}km away`;
+                return;
+            }
+
+            // Stream Handling (Chunked File Transfer)
+            if (data.type === 'FILE_HEADER') {
+                incomingStreams[data.transferId] = {
+                    name: data.name,
+                    size: data.size,
+                    mime: data.mime,
+                    received: 0,
+                    chunks: []
+                };
+                showProgressUI(`Receiving: ${data.name}`, 0);
+                return;
+            }
+
+            if (data.type === 'FILE_CHUNK') {
+                const stream = incomingStreams[data.transferId];
+                if (!stream) return;
+                stream.chunks.push(data.chunk);
+                stream.received += data.chunk.byteLength;
+
+                const percent = Math.round((stream.received / stream.size) * 100);
+                showProgressUI(`Receiving: ${stream.name}`, percent);
+
+                if (stream.received >= stream.size) {
+                    const completeBlob = new Blob(stream.chunks, { type: stream.mime || 'application/octet-stream' });
+                    renderInboxCard({ type: 'file', fileBlob: completeBlob, name: stream.name });
+                    addLog(`Received File: ${stream.name} (${(stream.size / 1024 / 1024).toFixed(2)} MB)`);
+                    delete incomingStreams[data.transferId];
+                    hideProgressUI();
+                }
+                return;
+            }
+
+            // Standard Payloads (Text, URL, Address)
+            if (['url', 'text', 'address'].includes(data.type)) {
+                renderInboxCard(data);
+                addLog(`Received ${data.type.toUpperCase()}`);
             }
         }
 
-        // --- SENDER LOGIC ---
-        function initSender() {
-            addLog(`Session started. PIN: ${sessionPin}`);
-            peerInstance = new Peer(peerConfig);
-            
-            // Get sender location early
-            requestLocation(loc => { myLocation = loc; });
+        // --- BROADCAST & SEND PIPELINE ---
+        async function initiateTransfer() {
+            if (connections.length === 0) return alert("No active connections in mesh.");
 
-            peerInstance.on('open', (id) => {
-                const qrUrl = `${window.location.href.split('?')[0]}?receive_peer=${id}&pin=${sessionPin}`;
-                new QRCode(document.getElementById("qrcode"), { text: qrUrl, width: 220, height: 220 });
-            });
-            
-            peerInstance.on('connection', (conn) => {
-                conn.on('open', () => {
-                    // Start unverified
-                });
-
-                conn.on('data', (data) => {
-                    // 1. Handshake Verification
-                    if (data.type === 'HANDSHAKE') {
-                        if (data.pin === sessionPin) {
-                            activeConnection = conn;
-                            const device = getDeviceName(data.agent);
-                            addLog(`Securely connected to ${device}`, true);
-                            
-                            const badge = document.getElementById('conn-status-badge');
-                            badge.className = 'badge bg-green';
-                            badge.innerText = '✅ Secured & Connected';
-                            document.getElementById('p2p-send-controls').style.display = 'block';
-
-                            // Ask receiver for their location to calculate distance
-                            conn.send({ type: 'GEO_REQ' });
-                        } else {
-                            conn.send({ type: 'ERROR', msg: 'Invalid PIN.' });
-                            conn.close();
-                            addLog(`Rejected unauthorized connection attempt.`, false);
-                        }
-                    }
-                    
-                    // 2. Receive Geolocation for Distance
-                    if (data.type === 'GEO_RES' && data.loc && myLocation) {
-                        const distMeters = calcDistance(myLocation.lat, myLocation.lon, data.loc.lat, data.loc.lon);
-                        const distBadge = document.getElementById('dist-badge');
-                        distBadge.style.display = 'inline-block';
-                        
-                        if (distMeters < 1000) {
-                            distBadge.innerText = `📍 Distance: ${Math.round(distMeters)} meters`;
-                        } else {
-                            distBadge.innerText = `📍 Distance: ${(distMeters/1000).toFixed(2)} km`;
-                        }
-                        addLog(`Receiver is approx ${distBadge.innerText.split(': ')[1]} away.`);
-                    }
-                });
-
-                conn.on('close', () => {
-                    if (activeConnection === conn) {
-                        document.getElementById('conn-status-badge').className = 'badge bg-red';
-                        document.getElementById('conn-status-badge').innerText = '❌ Disconnected. Waiting for reconnect...';
-                        document.getElementById('p2p-send-controls').style.display = 'none';
-                        document.getElementById('dist-badge').style.display = 'none';
-                        addLog(`Receiver disconnected or refreshed. Waiting...`, false);
-                        activeConnection = null;
-                    }
-                });
-            });
-        }
-
-        async function sendData() {
-            if (!activeConnection || !activeConnection.open) return alert("Receiver not connected.");
-            
-            const btn = document.getElementById('send-btn');
             const type = document.getElementById('share-type').value;
-            let payload = { type: type };
+            const btn = document.getElementById('send-btn');
 
             if (type === 'file') {
                 const file = document.getElementById('p2p-file').files[0];
-                if (!file) return alert("Select a file.");
-                if (file.size > MAX_FILE_SIZE) return alert("File exceeds 50MB limit.");
-                
-                btn.innerText = 'Sending...'; btn.disabled = true;
-                payload.file = await file.arrayBuffer();
-                payload.name = file.name;
-                addLog(`Sent File: ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`);
-            } else if (type === 'url') {
-                let rawUrl = document.getElementById('p2p-url').value.trim();
-                if (!rawUrl) return;
-                if (!/^https?:\/\//i.test(rawUrl)) rawUrl = 'https://' + rawUrl;
-                payload.content = rawUrl;
-                addLog(`Sent URL: ${rawUrl}`);
-            } else if (type === 'address' || type === 'text') {
-                payload.content = document.getElementById(`p2p-${type}`).value.trim();
-                if (!payload.content) return;
-                addLog(`Sent ${type.charAt(0).toUpperCase() + type.slice(1)} payload.`);
-            }
+                if (!file) return alert("Select a file to transfer.");
 
-            try {
-                activeConnection.send(payload);
-                document.getElementById(`p2p-${type}`).value = ''; // clear input
-            } catch (err) {
-                addLog(`Transfer failed: ${err.message}`, false);
-            } finally {
-                btn.innerText = 'Send to Device'; btn.disabled = false;
+                btn.disabled = true;
+                await streamFileToMesh(file);
+                document.getElementById('p2p-file').value = '';
+                btn.disabled = false;
+            } else {
+                let payload = { type: type };
+                if (type === 'url') {
+                    let u = document.getElementById('p2p-url').value.trim();
+                    if (!u) return;
+                    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+                    payload.content = u;
+                } else if (type === 'address') {
+                    payload.content = document.getElementById('p2p-address').value.trim();
+                } else if (type === 'text') {
+                    payload.content = document.getElementById('p2p-text').value.trim();
+                }
+
+                if (!payload.content) return;
+                broadcastPayload(payload);
+                document.getElementById(`p2p-${type}`).value = '';
+                addLog(`Broadcasted ${type}`);
             }
         }
 
-        // --- RECEIVER LOGIC ---
-        function initReceiver(urlParams) {
-            document.getElementById('receive-overlay').style.display = 'flex';
-            const targetId = urlParams.get('receive_peer');
-            const targetPin = urlParams.get('pin');
-            
-            peerInstance = new Peer(peerConfig);
-            
-            peerInstance.on('open', () => {
-                activeConnection = peerInstance.connect(targetId);
-                
-                activeConnection.on('open', () => {
-                    // Send Secure Handshake
-                    activeConnection.send({ 
-                        type: 'HANDSHAKE', 
-                        pin: targetPin, 
-                        agent: navigator.userAgent 
-                    });
-                    
-                    const badge = document.getElementById('recv-status-badge');
-                    badge.className = 'badge bg-green';
-                    badge.innerText = '✅ Secured & Ready';
-                });
-                
-                activeConnection.on('data', (data) => {
-                    if (data.type === 'GEO_REQ') {
-                        requestLocation(loc => {
-                            if (loc) activeConnection.send({ type: 'GEO_RES', loc: loc });
-                        });
-                        return;
-                    }
-                    if (data.type === 'ERROR') {
-                        alert(data.msg);
-                        return;
-                    }
-
-                    // Process Share Payload
-                    const stack = document.getElementById('received-stack');
-                    const card = document.createElement('div');
-                    card.className = 'receiver-card';
-                    
-                    let bodyHtml = '', actionHtml = '';
-
-                    if (data.type === 'file' || data.file) {
-                        bodyHtml = `<strong>File:</strong> ${data.name}`;
-                        downloadFile(data.file, data.name);
-                        actionHtml = `<p style="color: #10b981; font-weight: bold; margin:0;">✓ Downloaded</p>`;
-                    } else if (data.type === 'url') {
-                        bodyHtml = `<strong>URL:</strong><br><a href="${data.content}" target="_blank" style="color:#4f46e5; word-break:break-all;">${data.content}</a>`;
-                        actionHtml = `<button class="btn btn-primary" onclick="window.open('${data.content}', '_blank')">🚀 Open Website</button>`;
-                        if (!window.open(data.content, '_blank')) {
-                            actionHtml = `<p style="color:#64748b; font-size:0.85em; margin-bottom:8px;">(Tap below to launch)</p>` + actionHtml;
-                        }
-                    } else if (data.type === 'address') {
-                        bodyHtml = `<strong>Address:</strong><br>${data.content.replace(/\n/g, '<br>')}`;
-                        actionHtml = `<button class="btn btn-success" onclick="saveAsVCard(\`${data.content}\`)">💾 Save Contact (.vcf)</button>`;
-                    } else if (data.type === 'text') {
-                        bodyHtml = `<strong>Text:</strong><br><span style="word-break:break-all;">${data.content.replace(/\n/g, '<br>')}</span>`;
-                        actionHtml = `<button class="btn btn-primary" onclick="navigator.clipboard.writeText(\`${data.content}\`); this.innerText='✓ Copied!';">📋 Copy</button>`;
-                    }
-
-                    card.innerHTML = `<div style="margin-bottom: 10px;">${bodyHtml}</div><div>${actionHtml}</div>`;
-                    stack.prepend(card);
-                });
-
-                activeConnection.on('close', () => {
-                    const badge = document.getElementById('recv-status-badge');
-                    badge.className = 'badge bg-red';
-                    badge.innerText = '❌ Sender Disconnected';
-                });
+        function broadcastPayload(payload) {
+            connections.forEach(conn => {
+                if (conn.open) conn.send(payload);
             });
         }
 
-        // --- UTILS ---
-        function downloadFile(fileBytes, filename) {
-            const blob = new Blob([fileBytes]);
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url; link.download = filename;
-            document.body.appendChild(link); link.click();
-            document.body.removeChild(link); window.URL.revokeObjectURL(url);
+        // 64KB Chunked Stream Producer
+        async function streamFileToMesh(file) {
+            const transferId = Math.random().toString(36).substring(2, 9);
+            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+            // Send Header
+            broadcastPayload({
+                type: 'FILE_HEADER',
+                transferId: transferId,
+                name: file.name,
+                size: file.size,
+                mime: file.type
+            });
+
+            showProgressUI(`Broadcasting: ${file.name}`, 0);
+
+            for (let i = 0; i < totalChunks; i++) {
+                const start = i * CHUNK_SIZE;
+                const end = Math.min(start + CHUNK_SIZE, file.size);
+                const chunkBuffer = await file.slice(start, end).arrayBuffer();
+
+                broadcastPayload({
+                    type: 'FILE_CHUNK',
+                    transferId: transferId,
+                    chunk: chunkBuffer
+                });
+
+                const percent = Math.round(((i + 1) / totalChunks) * 100);
+                showProgressUI(`Broadcasting: ${file.name}`, percent);
+            }
+
+            addLog(`Sent File: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+            hideProgressUI();
         }
 
-        function saveAsVCard(addressText) {
-            const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:Shared Address\nADR:;;${addressText.replace(/\n/g, ', ')}\nEND:VCARD`;
-            const blob = new Blob([vcard], { type: 'text/vcard;charset=utf-8;' });
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url; link.download = 'address.vcf';
-            document.body.appendChild(link); link.click();
-            document.body.removeChild(link); window.URL.revokeObjectURL(url);
+        function showProgressUI(status, percent) {
+            const box = document.getElementById('transfer-progress-box');
+            box.style.display = 'block';
+            document.getElementById('progress-status').innerText = status;
+            document.getElementById('progress-percent').innerText = `${percent}%`;
+            document.getElementById('progress-bar').style.width = `${percent}%`;
+        }
+
+        function hideProgressUI() {
+            setTimeout(() => {
+                document.getElementById('transfer-progress-box').style.display = 'none';
+            }, 1200);
+        }
+
+        // --- INBOX & UI CARD BUILDER ---
+        function renderInboxCard(data) {
+            document.getElementById('empty-inbox-msg').style.display = 'none';
+            inboxCounter++;
+            document.getElementById('inbox-count').innerText = inboxCounter;
+
+            const stack = document.getElementById('inbox-stack');
+            const card = document.createElement('div');
+            card.className = 'share-card';
+
+            let bodyHtml = '', actionsHtml = '';
+
+            if (data.type === 'file') {
+                const url = URL.createObjectURL(data.fileBlob);
+                bodyHtml = `<strong>📁 File:</strong> ${data.name}`;
+                actionsHtml = `
+                    <a href="${url}" download="${data.name}" class="btn btn-primary btn-sm">💾 Download</a>
+                    <button class="btn btn-secondary btn-sm" onclick="triggerWebShare('${data.name}', '${data.name}', '${url}')">📤 Native Share</button>
+                `;
+            } else if (data.type === 'url') {
+                bodyHtml = `<strong>🔗 URL:</strong><br><a href="${data.content}" target="_blank" style="color:var(--primary); word-break:break-all;">${data.content}</a>`;
+                actionsHtml = `
+                    <button class="btn btn-primary btn-sm" onclick="window.open('${data.content}', '_blank')">🚀 Launch</button>
+                    <button class="btn btn-secondary btn-sm" onclick="triggerWebShare('Link', '${data.content}', '${data.content}')">📤 Share</button>
+                `;
+                // Attempt popup auto-launch
+                window.open(data.content, '_blank');
+            } else if (data.type === 'address') {
+                bodyHtml = `<strong>📍 Address:</strong><br>${data.content.replace(/\n/g, '<br>')}`;
+                actionsHtml = `
+                    <button class="btn btn-success btn-sm" onclick="saveVCard(\`${data.content}\`)">💾 Add Contact</button>
+                    <button class="btn btn-secondary btn-sm" onclick="triggerWebShare('Address', '${data.content}')">📤 Share</button>
+                `;
+            } else if (data.type === 'text') {
+                bodyHtml = `<strong>💬 Text:</strong><br><span style="word-break:break-all;">${data.content.replace(/\n/g, '<br>')}</span>`;
+                actionsHtml = `
+                    <button class="btn btn-primary btn-sm" onclick="navigator.clipboard.writeText(\`${data.content}\`); this.innerText='✓ Copied!';">📋 Copy</button>
+                    <button class="btn btn-secondary btn-sm" onclick="triggerWebShare('Message', '${data.content}')">📤 Share</button>
+                `;
+            }
+
+            card.innerHTML = `
+                <div style="margin-bottom: 8px;">${bodyHtml}</div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">${actionsHtml}</div>
+            `;
+            stack.prepend(card);
+        }
+
+        // --- WEB SHARE API & VCARD EXPORTERS ---
+        function triggerWebShare(title, text, url) {
+            if (navigator.share) {
+                navigator.share({ title: title, text: text, url: url || undefined }).catch(() => {});
+            } else {
+                navigator.clipboard.writeText(url || text);
+                alert("Copied to clipboard (Native sharing unsupported on this browser).");
+            }
+        }
+
+        function saveVCard(addr) {
+            const vcf = `BEGIN:VCARD\nVERSION:3.0\nFN:Shared Location\nADR:;;${addr.replace(/\n/g, ', ')}\nEND:VCARD`;
+            const blob = new Blob([vcf], { type: 'text/vcard;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'shared_address.vcf';
+            a.click(); URL.revokeObjectURL(url);
         }
     </script>
 </body>
