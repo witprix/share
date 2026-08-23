@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>P2P HyperShare Pro</title>
+    <title>P2P HyperShare Pro - Analytics Edition</title>
     
     <!-- Core Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
@@ -20,6 +20,7 @@
             --primary-hover: #4338ca;
             --success: #10b981;
             --danger: #ef4444;
+            --info: #3b82f6;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -40,61 +41,31 @@
             border-radius: 16px;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
             width: 100%;
-            max-width: 600px;
+            max-width: 650px;
             overflow: hidden;
             display: flex;
             flex-direction: column;
         }
 
-        .tabs {
-            display: flex;
-            background: #f8fafc;
-            border-bottom: 1px solid var(--border-color);
-        }
-
+        .tabs { display: flex; background: #f8fafc; border-bottom: 1px solid var(--border-color); }
         .tab-btn {
-            flex: 1;
-            padding: 14px;
-            border: none;
-            background: none;
-            font-weight: 600;
-            color: var(--text-muted);
-            cursor: pointer;
-            transition: all 0.2s;
-            font-size: 0.95em;
+            flex: 1; padding: 14px; border: none; background: none; font-weight: 600;
+            color: var(--text-muted); cursor: pointer; transition: all 0.2s; font-size: 0.95em;
         }
-
-        .tab-btn.active {
-            color: var(--primary);
-            border-bottom: 3px solid var(--primary);
-            background: #ffffff;
-        }
-
+        .tab-btn.active { color: var(--primary); border-bottom: 3px solid var(--primary); background: #ffffff; }
         .tab-content { display: none; padding: 20px; }
         .tab-content.active { display: block; }
 
         h2, h3 { color: var(--primary); text-align: center; margin-bottom: 10px; }
 
         .btn {
-            padding: 12px 18px;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            width: 100%;
-            font-size: 0.95em;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            text-decoration: none;
+            padding: 12px 18px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;
+            transition: all 0.2s; width: 100%; font-size: 0.95em; display: inline-flex;
+            align-items: center; justify-content: center; gap: 8px;
         }
-
         .btn-primary { background: var(--primary); color: white; }
         .btn-primary:hover { background: var(--primary-hover); }
         .btn-secondary { background: #f1f5f9; color: var(--text-main); border: 1px solid var(--border-color); }
-        .btn-secondary:hover { background: #e2e8f0; }
         .btn-success { background: var(--success); color: white; }
         .btn-sm { padding: 8px 12px; font-size: 0.85em; width: auto; }
 
@@ -105,15 +76,9 @@
             border-radius: 8px; font-family: inherit; font-size: 0.95em;
         }
 
-        #qrcode {
-            background: white; padding: 12px; border-radius: 8px;
-            display: inline-block; margin: 10px auto; border: 1px solid var(--border-color);
-        }
+        #qrcode { background: white; padding: 12px; border-radius: 8px; display: inline-block; margin: 10px auto; border: 1px solid var(--border-color); }
 
-        .badge {
-            display: inline-block; padding: 4px 10px; border-radius: 20px;
-            font-size: 0.8em; font-weight: 600;
-        }
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.8em; font-weight: 600; }
         .bg-green { background: #d1fae5; color: #065f46; }
         .bg-yellow { background: #fef3c7; color: #92400e; }
         .bg-red { background: #fee2e2; color: #991b1b; }
@@ -127,32 +92,20 @@
             margin-bottom: 8px; font-size: 0.9em; border: 1px solid var(--border-color);
         }
 
-        /* Dynamic Progress Containers */
-        #progress-container { margin: 15px 0; display: flex; flex-direction: column; gap: 10px; }
-        .progress-box {
-            background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color);
-        }
-        .progress-bar-bg {
-            background: #e2e8f0; border-radius: 6px; height: 10px; overflow: hidden; margin-top: 6px;
-        }
-        .progress-bar-fill {
-            background: var(--primary); height: 100%; width: 0%; transition: width 0.1s linear;
-        }
+        /* Enhanced Progress Analytics UI */
+        #progress-container { margin: 15px 0; display: flex; flex-direction: column; gap: 12px; }
+        .progress-box { background: #f8fafc; padding: 14px; border-radius: 10px; border: 1px solid var(--border-color); }
+        .prog-header { display: flex; justify-content: space-between; font-weight: 600; font-size: 0.9em; color: var(--text-main); margin-bottom: 6px; }
+        .prog-stats { display: flex; justify-content: space-between; font-size: 0.8em; color: var(--text-muted); margin-bottom: 8px; }
+        .progress-bar-bg { background: #e2e8f0; border-radius: 6px; height: 12px; overflow: hidden; }
+        .progress-bar-fill { background: var(--primary); height: 100%; width: 0%; transition: width 0.1s linear; }
 
         .log-container { max-height: 380px; overflow-y: auto; }
-        .log-item {
-            padding: 10px 0; border-bottom: 1px solid var(--border-color);
-            font-size: 0.88em; display: flex; flex-direction: column; gap: 2px;
-        }
+        .log-item { padding: 10px 0; border-bottom: 1px solid var(--border-color); font-size: 0.88em; display: flex; flex-direction: column; gap: 4px; }
         .log-time { color: var(--text-muted); font-size: 0.8em; }
 
-        .card-stack {
-            display: flex; flex-direction: column; gap: 12px; max-height: 420px; overflow-y: auto;
-        }
-        .share-card {
-            background: #f8fafc; border: 1px solid var(--border-color);
-            padding: 14px; border-radius: 10px; text-align: left;
-        }
+        .card-stack { display: flex; flex-direction: column; gap: 12px; max-height: 420px; overflow-y: auto; }
+        .share-card { background: #f8fafc; border: 1px solid var(--border-color); padding: 14px; border-radius: 10px; text-align: left; }
     </style>
 </head>
 <body>
@@ -168,28 +121,22 @@
         <!-- SHARE CONSOLE TAB -->
         <div id="tab-share" class="tab-content active">
             
-            <!-- Host QR Code & Mesh Roster -->
             <div id="host-qr-section" style="text-align: center; margin-bottom: 15px;">
                 <p style="font-size: 0.9em; color: var(--text-muted);">Scan to join the Mesh Network:</p>
                 <div id="qrcode"></div>
-                
-                <div style="margin: 10px 0;">
+                <div style="margin: 10px 0; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;">
                     <span id="conn-status-badge" class="badge bg-yellow">Waiting for peers...</span>
-                    <span id="peer-count-badge" class="badge bg-gray">0 Devices Connected</span>
+                    <span id="peer-count-badge" class="badge bg-gray">0 Connected</span>
                 </div>
-
                 <div id="peer-list-container"></div>
             </div>
 
-            <!-- Receiver Status Banner -->
             <div id="receiver-status-section" style="display: none; text-align: center; margin-bottom: 15px;">
                 <span id="client-conn-badge" class="badge bg-yellow">Connecting to Host Mesh...</span>
             </div>
 
-            <!-- Unified Send Controls -->
             <div id="send-controls" style="display: none; border-top: 1px solid var(--border-color); padding-top: 15px;">
                 
-                <!-- Target Selector (Only useful for Host) -->
                 <div id="target-selector-group" class="input-group" style="display: none;">
                     <label>Target Device</label>
                     <select id="target-device">
@@ -200,34 +147,25 @@
                 <div class="input-group">
                     <label>Transfer Type</label>
                     <select id="share-type" onchange="toggleInputFields()">
-                        <option value="file">File (Resumable Pull Stream)</option>
+                        <option value="file">File (Analytics Chunk Stream)</option>
                         <option value="url">URL / Web Link</option>
                         <option value="address">Physical Address</option>
                         <option value="text">Message / Raw Text</option>
                     </select>
                 </div>
 
-                <div id="input-file" class="input-group">
-                    <input type="file" id="p2p-file">
-                </div>
-                <div id="input-url" class="input-group" style="display: none;">
-                    <input type="text" id="p2p-url" placeholder="google.com or https://example.com">
-                </div>
-                <div id="input-address" class="input-group" style="display: none;">
-                    <textarea id="p2p-address" rows="3" placeholder="Enter street address..."></textarea>
-                </div>
-                <div id="input-text" class="input-group" style="display: none;">
-                    <textarea id="p2p-text" rows="3" placeholder="Type plain text message..."></textarea>
-                </div>
+                <div id="input-file" class="input-group"><input type="file" id="p2p-file"></div>
+                <div id="input-url" class="input-group" style="display: none;"><input type="text" id="p2p-url" placeholder="https://example.com"></div>
+                <div id="input-address" class="input-group" style="display: none;"><textarea id="p2p-address" rows="3" placeholder="Enter street address..."></textarea></div>
+                <div id="input-text" class="input-group" style="display: none;"><textarea id="p2p-text" rows="3" placeholder="Type plain text message..."></textarea></div>
 
-                <!-- Dynamic Progress Bars inject here -->
+                <!-- Deep Analytics Progress Container -->
                 <div id="progress-container"></div>
 
                 <button class="btn btn-primary" id="send-btn" onclick="initiateTransfer()">Send Data</button>
             </div>
         </div>
 
-        <!-- RECEIVED ITEMS TAB -->
         <div id="tab-inbox" class="tab-content">
             <h3 style="text-align: left;">Inbox Stack</h3>
             <div id="inbox-stack" class="card-stack">
@@ -235,7 +173,6 @@
             </div>
         </div>
 
-        <!-- ACTIVITY LOGS TAB -->
         <div id="tab-logs" class="tab-content">
             <h3 style="text-align: left;">Session Audit Trail</h3>
             <div class="log-container" id="log-list"></div>
@@ -245,14 +182,14 @@
     <script>
         const CHUNK_SIZE = 64 * 1024; // 64KB
         let peerInstance = null;
-        
-        // Maps devId to connections
         let connectedPeers = new Map(); 
         let hostConnection = null; 
 
-        // Transfer Data Memory
-        let sharedFiles = new Map(); // Holds files being hosted by this device
-        let incomingStreams = {};    // Holds buffers of files being downloaded
+        let sharedFiles = new Map(); 
+        let incomingStreams = {};    
+        
+        // Tracks speed metrics per connection/transfer
+        let transferMetrics = new Map(); 
 
         let sessionPin = Math.random().toString(36).substring(2, 8).toUpperCase();
         let isHost = true;
@@ -268,13 +205,24 @@
             }
         };
 
-        // --- IDENTITY MANAGEMENT ---
+        // --- FORMATTING UTILS ---
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 B';
+            const k = 1024, dm = decimals < 0 ? 0 : decimals, sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        function formatTime(seconds) {
+            if (seconds === Infinity || isNaN(seconds)) return 'Calculating...';
+            if (seconds < 60) return `${Math.round(seconds)}s`;
+            return `${Math.floor(seconds/60)}m ${Math.round(seconds%60)}s`;
+        }
+
+        // --- IDENTITY ---
         function getMyDeviceId() {
             let id = localStorage.getItem('hyper_share_id');
-            if (!id) {
-                id = Math.random().toString(36).substr(2, 10);
-                localStorage.setItem('hyper_share_id', id);
-            }
+            if (!id) { id = Math.random().toString(36).substr(2, 10); localStorage.setItem('hyper_share_id', id); }
             return id;
         }
 
@@ -282,12 +230,11 @@
             let name = localStorage.getItem('hyper_share_name');
             if (!name) {
                 const agent = navigator.userAgent;
-                let os = "Web Peer";
+                let os = "Web";
                 if (/android/i.test(agent)) os = "Android";
                 else if (/iPad|iPhone|iPod/.test(agent)) os = "iOS";
                 else if (/Mac OS/.test(agent)) os = "Mac";
                 else if (/Windows/.test(agent)) os = "Windows PC";
-                
                 name = `${os}-${Math.floor(1000 + Math.random() * 9000)}`;
                 localStorage.setItem('hyper_share_name', name);
             }
@@ -298,7 +245,6 @@
             const urlParams = new URLSearchParams(window.location.search);
             const receivePeer = urlParams.get('receive_peer');
             const pin = urlParams.get('pin');
-
             getGeo(loc => { myLocation = loc; });
 
             if (receivePeer && pin) {
@@ -320,26 +266,26 @@
 
         function toggleInputFields() {
             const type = document.getElementById('share-type').value;
-            ['file', 'url', 'address', 'text'].forEach(t => {
-                document.getElementById(`input-${t}`).style.display = type === t ? 'block' : 'none';
-            });
+            ['file', 'url', 'address', 'text'].forEach(t => { document.getElementById(`input-${t}`).style.display = type === t ? 'block' : 'none'; });
         }
 
-        function addLog(msg, isErr = false) {
+        function addLog(msg, type = 'info') {
             const list = document.getElementById('log-list');
             const now = new Date().toLocaleTimeString();
+            let color = '#1e293b'; let icon = 'ℹ️';
+            if (type === 'err') { color = '#ef4444'; icon = '❌'; }
+            if (type === 'success') { color = '#10b981'; icon = '✅'; }
+            if (type === 'action') { color = '#3b82f6'; icon = '👀'; }
+
             const el = document.createElement('div');
             el.className = 'log-item';
-            el.innerHTML = `
-                <span style="color: ${isErr ? '#ef4444' : '#1e293b'}; font-weight: 500;">${msg}</span>
-                <span class="log-time">${now}</span>
-            `;
+            el.innerHTML = `<span style="color: ${color}; font-weight: 500;">${icon} ${msg}</span><span class="log-time">${now}</span>`;
             list.prepend(el);
         }
 
         // --- HOST LOGIC ---
         function initHost() {
-            addLog(`Session created. PIN: ${sessionPin}`);
+            addLog(`Session created. PIN: ${sessionPin}`, 'info');
             document.getElementById('target-selector-group').style.display = 'block';
             peerInstance = new Peer(peerConfig);
 
@@ -351,39 +297,36 @@
             peerInstance.on('connection', (conn) => {
                 conn.on('data', (data) => handleHostIncoming(conn, data));
                 conn.on('close', () => {
-                    if (conn.devId && connectedPeers.has(conn.devId)) {
-                        if (connectedPeers.get(conn.devId).conn === conn) {
-                            connectedPeers.delete(conn.devId);
-                            updateHostUI();
-                            addLog(`Device disconnected.`);
-                        }
+                    if (conn.devId && connectedPeers.has(conn.devId) && connectedPeers.get(conn.devId).conn === conn) {
+                        const name = connectedPeers.get(conn.devId).name;
+                        connectedPeers.delete(conn.devId);
+                        updateHostUI();
+                        addLog(`${name} disconnected.`, 'err');
                     }
                 });
             });
         }
 
         function handleHostIncoming(conn, data) {
+            // Handshake Handling
             if (data.type === 'HANDSHAKE') {
                 if (data.pin === sessionPin) {
                     const devId = data.deviceId;
-                    if (connectedPeers.has(devId)) {
-                        try { connectedPeers.get(devId).conn.close(); } catch(e){}
-                    }
+                    if (connectedPeers.has(devId)) { try { connectedPeers.get(devId).conn.close(); } catch(e){} }
                     conn.devId = devId;
                     connectedPeers.set(devId, { conn: conn, name: data.deviceName, distance: 'Calculating...' });
                     updateHostUI();
                     document.getElementById('send-controls').style.display = 'block';
                     conn.send({ type: 'GEO_REQ' });
-                    
-                    // Auto-Resume any interrupted pulls
                     resumeInterruptedTransfers(conn);
+                    addLog(`Authenticated: ${data.deviceName}`, 'success');
                 } else {
-                    conn.send({ type: 'ERROR', msg: 'Invalid PIN' });
-                    conn.close();
+                    conn.send({ type: 'ERROR', msg: 'Invalid PIN' }); conn.close();
                 }
                 return;
             }
 
+            // Geography Handshake
             if (data.type === 'GEO_RES') {
                 const devId = conn.devId;
                 if (connectedPeers.has(devId)) {
@@ -397,6 +340,19 @@
                 return;
             }
 
+            // Acknowledgment Intercepts
+            if (data.type === 'ACK_DELIVERED') {
+                const name = connectedPeers.has(conn.devId) ? connectedPeers.get(conn.devId).name : 'A peer';
+                addLog(`Delivered to Inbox of ${name}: ${data.item}`, 'success');
+                return;
+            }
+            if (data.type === 'ACK_ACTION') {
+                const name = connectedPeers.has(conn.devId) ? connectedPeers.get(conn.devId).name : 'A peer';
+                addLog(`${name} ${data.action} ${data.item}`, 'action');
+                return;
+            }
+
+            // Normal Processing
             processStandardPayload(conn, data);
         }
 
@@ -407,28 +363,21 @@
             const listContainer = document.getElementById('peer-list-container');
             const targetSelect = document.getElementById('target-device');
             
-            countBadge.innerText = `${connectedPeers.size} Device(s) Connected`;
+            countBadge.innerText = `${connectedPeers.size} Connected`;
             targetSelect.innerHTML = '<option value="ALL">Broadcast to Entire Mesh</option>';
             
             if (connectedPeers.size > 0) {
-                connBadge.className = 'badge bg-green';
-                connBadge.innerText = 'Mesh Active';
+                connBadge.className = 'badge bg-green'; connBadge.innerText = 'Mesh Active';
                 listContainer.style.display = 'block';
-                
                 let html = '';
                 connectedPeers.forEach((peer, id) => {
-                    html += `<div class="peer-list-item">
-                                <strong>📱 ${peer.name}</strong> 
-                                <span class="badge bg-blue">📍 ${peer.distance}</span>
-                             </div>`;
+                    html += `<div class="peer-list-item"><strong>📱 ${peer.name}</strong><span class="badge bg-blue">📍 ${peer.distance}</span></div>`;
                     targetSelect.innerHTML += `<option value="${id}">${peer.name}</option>`;
                 });
                 listContainer.innerHTML = html;
             } else {
-                connBadge.className = 'badge bg-yellow';
-                connBadge.innerText = 'Waiting for peers...';
-                listContainer.style.display = 'none';
-                document.getElementById('send-controls').style.display = 'none';
+                connBadge.className = 'badge bg-yellow'; connBadge.innerText = 'Waiting for peers...';
+                listContainer.style.display = 'none'; document.getElementById('send-controls').style.display = 'none';
             }
         }
 
@@ -437,254 +386,180 @@
             peerInstance = new Peer(peerConfig);
             peerInstance.on('open', () => {
                 hostConnection = peerInstance.connect(targetHostId);
-                
                 hostConnection.on('open', () => {
-                    hostConnection.send({ 
-                        type: 'HANDSHAKE', pin: targetPin, 
-                        deviceId: getMyDeviceId(), deviceName: getMyDeviceName()
-                    });
-                    
+                    hostConnection.send({ type: 'HANDSHAKE', pin: targetPin, deviceId: getMyDeviceId(), deviceName: getMyDeviceName() });
                     document.getElementById('client-conn-badge').className = 'badge bg-green';
                     document.getElementById('client-conn-badge').innerText = '✅ Connected to Host';
                     document.getElementById('send-controls').style.display = 'block';
-                    addLog('Secured connection established.');
-
-                    // Auto-Resume any interrupted pulls
+                    addLog('Secured connection established.', 'success');
                     resumeInterruptedTransfers(hostConnection);
                 });
-
                 hostConnection.on('data', (data) => {
-                    if (data.type === 'GEO_REQ') {
-                        getGeo(loc => { hostConnection.send({ type: 'GEO_RES', loc: loc }); });
-                        return;
-                    }
+                    if (data.type === 'GEO_REQ') { getGeo(loc => { hostConnection.send({ type: 'GEO_RES', loc: loc }); }); return; }
                     if (data.type === 'ERROR') return alert(data.msg);
                     processStandardPayload(hostConnection, data);
                 });
-
                 hostConnection.on('close', () => {
                     hostConnection = null;
                     document.getElementById('client-conn-badge').className = 'badge bg-red';
                     document.getElementById('client-conn-badge').innerText = '❌ Disconnected (Auto-Reconnecting...)';
                     document.getElementById('send-controls').style.display = 'none';
-                    addLog('Connection closed. Refresh page to re-join.', true);
+                    addLog('Connection closed. Refresh page to re-join.', 'err');
                 });
             });
         }
 
-        // --- PULL-BASED FILE PROTOCOL & PAYLOADS ---
+        // --- PROTOCOL & ANALYTICS ---
         function resumeInterruptedTransfers(conn) {
             Object.keys(incomingStreams).forEach(transferId => {
                 const stream = incomingStreams[transferId];
-                const nextIdx = stream.chunks.length;
-                if (nextIdx < stream.totalChunks) {
-                    conn.send({ type: 'CHUNK_REQ', transferId, index: nextIdx });
-                    addLog(`Resuming download: ${stream.name}`);
+                if (stream.chunks.length < stream.totalChunks) {
+                    conn.send({ type: 'CHUNK_REQ', transferId, index: stream.chunks.length });
                 }
             });
         }
 
         function processStandardPayload(conn, data) {
-            // RECEIVER side: Getting a file offer, initiates pull
+            const peerName = (conn.devId && connectedPeers.has(conn.devId)) ? connectedPeers.get(conn.devId).name : 'Host';
+
             if (data.type === 'FILE_OFFER') {
                 if (!incomingStreams[data.transferId]) {
-                    incomingStreams[data.transferId] = { 
-                        name: data.name, size: data.size, mime: data.mime, 
-                        totalChunks: data.totalChunks, chunks: [] 
-                    };
+                    incomingStreams[data.transferId] = { name: data.name, size: data.size, mime: data.mime, totalChunks: data.totalChunks, chunks: [], receivedBytes: 0, startTime: Date.now() };
                 }
                 const nextIdx = incomingStreams[data.transferId].chunks.length;
                 if (nextIdx < data.totalChunks) {
                     conn.send({ type: 'CHUNK_REQ', transferId: data.transferId, index: nextIdx });
-                    showProgressUI(data.transferId, `Downloading: ${data.name}`, Math.round((nextIdx/data.totalChunks)*100));
                 }
                 return;
             }
 
-            // SENDER side: Fulfilling a chunk request (Tracks true receiver progress)
+            // SENDER SIDE Analytics Calculation
             if (data.type === 'CHUNK_REQ') {
                 const sf = sharedFiles.get(data.transferId);
-                if (!sf) {
-                    conn.send({ type: 'FILE_ERROR', transferId: data.transferId, msg: 'File no longer available on host.' });
-                    return;
-                }
+                if (!sf) return conn.send({ type: 'FILE_ERROR', transferId: data.transferId, msg: 'File unavailable.' });
                 
-                const percent = Math.round(((data.index + 1) / sf.totalChunks) * 100);
-                showProgressUI(data.transferId, `Uploading: ${sf.name}`, percent);
+                const metricId = `${data.transferId}_${conn.devId || 'client'}`;
+                if (!transferMetrics.has(metricId)) { transferMetrics.set(metricId, { startTime: Date.now() }); }
+                
+                const m = transferMetrics.get(metricId);
+                const currentBytes = data.index * CHUNK_SIZE;
+                const elapsedSecs = (Date.now() - m.startTime) / 1000;
+                
+                let speedMB = 0; let etaSecs = Infinity;
+                if (elapsedSecs > 0 && currentBytes > 0) {
+                    speedMB = (currentBytes / 1024 / 1024) / elapsedSecs;
+                    etaSecs = (sf.size - currentBytes) / (currentBytes / elapsedSecs);
+                }
+
+                const percent = Math.round((currentBytes / sf.size) * 100);
+                
+                showAnalyticsProgressUI(
+                    metricId, 
+                    `To ${peerName}: ${sf.name}`, 
+                    percent, 
+                    formatBytes(currentBytes), 
+                    formatBytes(sf.size), 
+                    speedMB.toFixed(2), 
+                    formatTime(etaSecs)
+                );
 
                 const start = data.index * CHUNK_SIZE;
-                const end = Math.min(start + CHUNK_SIZE, sf.size);
-                
-                sf.file.slice(start, end).arrayBuffer().then(buffer => {
+                sf.file.slice(start, Math.min(start + CHUNK_SIZE, sf.size)).arrayBuffer().then(buffer => {
                     conn.send({ type: 'FILE_CHUNK', transferId: data.transferId, index: data.index, chunk: buffer });
                 });
                 return;
             }
 
-            // RECEIVER side: Receiving a pulled chunk
+            // RECEIVER SIDE Analytics
             if (data.type === 'FILE_CHUNK') {
                 const stream = incomingStreams[data.transferId];
                 if (!stream) return;
                 
-                // Ensure sequence is maintained (prevents duplicate storage)
                 if (data.index === stream.chunks.length) {
                     stream.chunks.push(data.chunk);
-                    const percent = Math.round((stream.chunks.length / stream.totalChunks) * 100);
-                    showProgressUI(data.transferId, `Downloading: ${stream.name}`, percent);
+                    stream.receivedBytes += data.chunk.byteLength;
+
+                    const elapsedSecs = (Date.now() - stream.startTime) / 1000;
+                    let speedMB = 0; let etaSecs = Infinity;
+                    if (elapsedSecs > 0 && stream.receivedBytes > 0) {
+                        speedMB = (stream.receivedBytes / 1024 / 1024) / elapsedSecs;
+                        etaSecs = (stream.size - stream.receivedBytes) / (stream.receivedBytes / elapsedSecs);
+                    }
+
+                    const percent = Math.round((stream.receivedBytes / stream.size) * 100);
+                    showAnalyticsProgressUI(
+                        data.transferId, 
+                        `Downloading: ${stream.name}`, 
+                        percent, 
+                        formatBytes(stream.receivedBytes), 
+                        formatBytes(stream.size), 
+                        speedMB.toFixed(2), 
+                        formatTime(etaSecs)
+                    );
 
                     if (stream.chunks.length >= stream.totalChunks) {
                         const blob = new Blob(stream.chunks, { type: stream.mime || 'application/octet-stream' });
-                        renderInboxCard({ type: 'file', fileBlob: blob, name: stream.name });
-                        addLog(`Received File: ${stream.name}`);
+                        renderInboxCard({ type: 'file', fileBlob: blob, name: stream.name, transferId: data.transferId });
+                        
+                        // INBOX DELIVERED ACK
+                        conn.send({ type: 'ACK_DELIVERED', item: stream.name });
+                        
                         delete incomingStreams[data.transferId];
-                        hideProgressUI(data.transferId);
+                        hideAnalyticsProgressUI(data.transferId);
                     } else {
-                        // Request the very next piece securely
                         conn.send({ type: 'CHUNK_REQ', transferId: data.transferId, index: data.index + 1 });
                     }
                 }
                 return;
             }
 
-            if (data.type === 'FILE_ERROR') {
-                alert(data.msg);
-                delete incomingStreams[data.transferId];
-                hideProgressUI(data.transferId);
-                return;
-            }
-
-            // Simple Payloads
             if (['url', 'text', 'address'].includes(data.type)) {
                 renderInboxCard(data);
-                addLog(`Received ${data.type.toUpperCase()}`);
+                // INSTANT DELIVERY ACK FOR TEXT TYPES
+                conn.send({ type: 'ACK_DELIVERED', item: `a ${data.type} payload` });
             }
         }
 
-        // --- INITIATE TRANSFERS ---
-        function safeSendToTargets(payload, targetId = 'ALL') {
-            if (isHost) {
-                if (targetId === 'ALL') {
-                    connectedPeers.forEach(peer => { try { if (peer.conn.open) peer.conn.send(payload); } catch(e){} });
-                } else {
-                    if (connectedPeers.has(targetId)) {
-                        try { let p = connectedPeers.get(targetId); if (p.conn.open) p.conn.send(payload); } catch(e){}
-                    }
-                }
-            } else {
-                if (hostConnection && hostConnection.open) hostConnection.send(payload);
-            }
+        // --- UI DRAWING & ACKS ---
+        function sendActionAck(actionVerb, itemName) {
+            const p = { type: 'ACK_ACTION', action: actionVerb, item: itemName };
+            if (isHost) { connectedPeers.forEach(peer => { try { peer.conn.send(p); }catch(e){} }); } 
+            else if (hostConnection) { hostConnection.send(p); }
         }
 
-        async function initiateTransfer() {
-            if (isHost && connectedPeers.size === 0) return alert("No active connections in mesh.");
-            if (!isHost && (!hostConnection || !hostConnection.open)) return alert("Not connected to host.");
-
-            const type = document.getElementById('share-type').value;
-            const targetId = isHost ? document.getElementById('target-device').value : 'ALL';
-
-            if (type === 'file') {
-                const file = document.getElementById('p2p-file').files[0];
-                if (!file) return alert("Select a file to transfer.");
-
-                // Register file in memory so peers can pull it
-                const transferId = Math.random().toString(36).substring(2, 9);
-                const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-                sharedFiles.set(transferId, { file: file, name: file.name, size: file.size, totalChunks: totalChunks, mime: file.type });
-
-                // Dispatch the Offer
-                safeSendToTargets({ type: 'FILE_OFFER', transferId, name: file.name, size: file.size, totalChunks, mime: file.type }, targetId);
-                showProgressUI(transferId, `Waiting for receiver to pull: ${file.name}`, 0);
-                
-                document.getElementById('p2p-file').value = '';
-                addLog(`Offered File to Mesh: ${file.name}`);
-            } else {
-                let payload = { type: type };
-                if (type === 'url') {
-                    let u = document.getElementById('p2p-url').value.trim();
-                    if (!u) return;
-                    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-                    payload.content = u;
-                } else if (type === 'address') {
-                    payload.content = document.getElementById('p2p-address').value.trim();
-                } else if (type === 'text') {
-                    payload.content = document.getElementById('p2p-text').value.trim();
-                }
-
-                if (!payload.content) return;
-                safeSendToTargets(payload, targetId);
-                document.getElementById(`p2p-${type}`).value = '';
-                addLog(`Sent ${type} ${targetId === 'ALL' ? 'to Mesh' : 'to Target'}`);
-            }
-        }
-
-        // --- DYNAMIC PROGRESS BARS UI ---
-        function showProgressUI(transferId, status, percent) {
-            let container = document.getElementById('progress-container');
-            let box = document.getElementById(`prog-${transferId}`);
-            
-            if (!box) {
-                box = document.createElement('div');
-                box.id = `prog-${transferId}`;
-                box.className = 'progress-box';
-                box.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; font-size: 0.85em; font-weight: 600;">
-                        <span id="status-${transferId}">${status}</span>
-                        <span id="percent-${transferId}">${percent}%</span>
-                    </div>
-                    <div class="progress-bar-bg">
-                        <div id="bar-${transferId}" class="progress-bar-fill" style="width: ${percent}%;"></div>
-                    </div>
-                `;
-                container.appendChild(box);
-            } else {
-                document.getElementById(`status-${transferId}`).innerText = status;
-                document.getElementById(`percent-${transferId}`).innerText = `${percent}%`;
-                document.getElementById(`bar-${transferId}`).style.width = `${percent}%`;
-            }
-        }
-
-        function hideProgressUI(transferId) {
-            const box = document.getElementById(`prog-${transferId}`);
-            if (box) setTimeout(() => { box.remove(); }, 1500); // Remove cleanly after 1.5 seconds
-        }
-
-        // --- INBOX & UTILS ---
         function renderInboxCard(data) {
             document.getElementById('empty-inbox-msg').style.display = 'none';
-            inboxCounter++;
-            document.getElementById('inbox-count').innerText = inboxCounter;
+            inboxCounter++; document.getElementById('inbox-count').innerText = inboxCounter;
 
             const stack = document.getElementById('inbox-stack');
             const card = document.createElement('div');
             card.className = 'share-card';
 
             let bodyHtml = '', actionsHtml = '';
+            let itemRef = data.name || 'a link/text';
 
             if (data.type === 'file') {
                 const url = URL.createObjectURL(data.fileBlob);
                 bodyHtml = `<strong>📁 File:</strong> ${data.name}`;
                 actionsHtml = `
-                    <a href="${url}" download="${data.name}" class="btn btn-primary btn-sm">💾 Download</a>
+                    <a href="${url}" download="${data.name}" class="btn btn-primary btn-sm" onclick="sendActionAck('downloaded', '${data.name}')">💾 Download</a>
                     <button class="btn btn-secondary btn-sm" onclick="triggerWebShare('${data.name}', '${data.name}', '${url}')">📤 Native Share</button>
                 `;
             } else if (data.type === 'url') {
                 bodyHtml = `<strong>🔗 URL:</strong><br><a href="${data.content}" target="_blank" style="color:var(--primary); word-break:break-all;">${data.content}</a>`;
                 actionsHtml = `
-                    <button class="btn btn-primary btn-sm" onclick="window.open('${data.content}', '_blank')">🚀 Launch</button>
+                    <button class="btn btn-primary btn-sm" onclick="window.open('${data.content}', '_blank'); sendActionAck('launched', 'a link');">🚀 Launch</button>
                     <button class="btn btn-secondary btn-sm" onclick="triggerWebShare('Link', '${data.content}', '${data.content}')">📤 Share</button>
                 `;
-                window.open(data.content, '_blank');
             } else if (data.type === 'address') {
                 bodyHtml = `<strong>📍 Address:</strong><br>${data.content.replace(/\n/g, '<br>')}`;
                 actionsHtml = `
-                    <button class="btn btn-success btn-sm" onclick="saveVCard(\`${data.content}\`)">💾 Add Contact</button>
-                    <button class="btn btn-secondary btn-sm" onclick="triggerWebShare('Address', '${data.content}')">📤 Share</button>
+                    <button class="btn btn-success btn-sm" onclick="saveVCard(\`${data.content}\`); sendActionAck('saved', 'an address');">💾 Add Contact</button>
                 `;
             } else if (data.type === 'text') {
                 bodyHtml = `<strong>💬 Text:</strong><br><span style="word-break:break-all;">${data.content.replace(/\n/g, '<br>')}</span>`;
                 actionsHtml = `
-                    <button class="btn btn-primary btn-sm" onclick="navigator.clipboard.writeText(\`${data.content}\`); this.innerText='✓ Copied!';">📋 Copy</button>
-                    <button class="btn btn-secondary btn-sm" onclick="triggerWebShare('Message', '${data.content}')">📤 Share</button>
+                    <button class="btn btn-primary btn-sm" onclick="navigator.clipboard.writeText(\`${data.content}\`); this.innerText='✓ Copied!'; sendActionAck('copied', 'a message');">📋 Copy</button>
                 `;
             }
 
@@ -692,36 +567,76 @@
             stack.prepend(card);
         }
 
+        function showAnalyticsProgressUI(id, title, percent, currentB, totalB, speed, eta) {
+            let container = document.getElementById('progress-container');
+            let box = document.getElementById(`prog-${id}`);
+            
+            if (!box) {
+                box = document.createElement('div');
+                box.id = `prog-${id}`;
+                box.className = 'progress-box';
+                container.appendChild(box);
+            }
+            
+            box.innerHTML = `
+                <div class="prog-header"><span>${title}</span><span>${percent}%</span></div>
+                <div class="prog-stats">
+                    <span>${currentB} / ${totalB}</span>
+                    <span>⚡ ${speed} MB/s | ⏱️ ETA: ${eta}</span>
+                </div>
+                <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${percent}%;"></div></div>
+            `;
+        }
+
+        function hideAnalyticsProgressUI(id) {
+            // Find all progress boxes matching this transfer ID (could be multiple if broadcasting)
+            const elements = document.querySelectorAll(`[id^="prog-${id}"]`);
+            elements.forEach(el => setTimeout(() => { el.remove(); }, 2000));
+        }
+
+        // --- INITIATE SENDS ---
+        function safeSendToTargets(payload, targetId = 'ALL') {
+            if (isHost) {
+                if (targetId === 'ALL') { connectedPeers.forEach(peer => { try { if (peer.conn.open) peer.conn.send(payload); } catch(e){} }); } 
+                else if (connectedPeers.has(targetId)) { try { connectedPeers.get(targetId).conn.send(payload); } catch(e){} }
+            } else {
+                if (hostConnection && hostConnection.open) hostConnection.send(payload);
+            }
+        }
+
+        async function initiateTransfer() {
+            if (isHost && connectedPeers.size === 0) return alert("No active connections.");
+            if (!isHost && (!hostConnection || !hostConnection.open)) return alert("Not connected to host.");
+
+            const type = document.getElementById('share-type').value;
+            const targetId = isHost ? document.getElementById('target-device').value : 'ALL';
+
+            if (type === 'file') {
+                const file = document.getElementById('p2p-file').files[0];
+                if (!file) return alert("Select a file.");
+                const transferId = Math.random().toString(36).substring(2, 9);
+                sharedFiles.set(transferId, { file: file, name: file.name, size: file.size, totalChunks: Math.ceil(file.size/CHUNK_SIZE), mime: file.type });
+                safeSendToTargets({ type: 'FILE_OFFER', transferId, name: file.name, size: file.size, totalChunks: Math.ceil(file.size/CHUNK_SIZE), mime: file.type }, targetId);
+                document.getElementById('p2p-file').value = '';
+            } else {
+                let payload = { type: type };
+                if (type === 'url') { let u = document.getElementById('p2p-url').value.trim(); if (!/^https?:\/\//i.test(u)) u = 'https://' + u; payload.content = u; } 
+                else { payload.content = document.getElementById(`p2p-${type}`).value.trim(); }
+                if (!payload.content) return;
+                safeSendToTargets(payload, targetId);
+                document.getElementById(`p2p-${type}`).value = '';
+            }
+        }
+
+        // --- MATH & UTILS ---
         function calcDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371e3;
-            const f1 = lat1 * Math.PI / 180, f2 = lat2 * Math.PI / 180;
+            const R = 6371e3; const f1 = lat1 * Math.PI / 180, f2 = lat2 * Math.PI / 180;
             const df = (lat2 - lat1) * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(df / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
-            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * 2 * Math.atan2(Math.sqrt(Math.sin(df/2)**2 + Math.cos(f1)*Math.cos(f2)*Math.sin(dl/2)**2), Math.sqrt(1 - (Math.sin(df/2)**2 + Math.cos(f1)*Math.cos(f2)*Math.sin(dl/2)**2)));
         }
-
-        function getGeo(callback) {
-            if ("geolocation" in navigator) {
-                navigator.geolocation.getCurrentPosition(
-                    pos => callback({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-                    () => callback(null), { timeout: 5000 }
-                );
-            } else { callback(null); }
-        }
-
-        function triggerWebShare(title, text, url) {
-            if (navigator.share) { navigator.share({ title, text, url: url || undefined }).catch(()=>{}); } 
-            else { navigator.clipboard.writeText(url || text); alert("Copied to clipboard (Native sharing unsupported here)."); }
-        }
-
-        function saveVCard(addr) {
-            const vcf = `BEGIN:VCARD\nVERSION:3.0\nFN:Shared Location\nADR:;;${addr.replace(/\n/g, ', ')}\nEND:VCARD`;
-            const blob = new Blob([vcf], { type: 'text/vcard;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = 'shared_address.vcf';
-            a.click(); URL.revokeObjectURL(url);
-        }
+        function getGeo(cb) { if ("geolocation" in navigator) { navigator.geolocation.getCurrentPosition(pos => cb({lat: pos.coords.latitude, lon: pos.coords.longitude}), () => cb(null), {timeout: 5000}); } else { cb(null); } }
+        function triggerWebShare(t, txt, url) { if (navigator.share) { navigator.share({title: t, text: txt, url: url}).catch(()=>{}); sendActionAck('shared natively', t); } else { navigator.clipboard.writeText(url || txt); alert("Copied to clipboard."); sendActionAck('copied', t); } }
+        function saveVCard(addr) { const blob = new Blob([`BEGIN:VCARD\nVERSION:3.0\nFN:Shared Location\nADR:;;${addr.replace(/\n/g, ', ')}\nEND:VCARD`], { type: 'text/vcard' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'address.vcf'; a.click(); }
     </script>
 </body>
 </html>
