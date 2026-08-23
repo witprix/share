@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>P2P HyperShare Pro - Analytics Edition</title>
+    <title>P2P HyperShare Pro - Auto-Recovery Edition</title>
     
     <!-- Core Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
@@ -147,7 +147,7 @@
                 <div class="input-group">
                     <label>Transfer Type</label>
                     <select id="share-type" onchange="toggleInputFields()">
-                        <option value="file">File (Analytics Chunk Stream)</option>
+                        <option value="file">File (Auto-Recovery Chunk Stream)</option>
                         <option value="url">URL / Web Link</option>
                         <option value="address">Physical Address</option>
                         <option value="text">Message / Raw Text</option>
@@ -409,12 +409,25 @@
             });
         }
 
-        // --- PROTOCOL & ANALYTICS ---
+        // --- PROTOCOL, WATCHDOG, & ANALYTICS ---
+        function requestChunkWithRetry(conn, transferId, index) {
+            const stream = incomingStreams[transferId];
+            if (!stream) return;
+
+            conn.send({ type: 'CHUNK_REQ', transferId: transferId, index: index });
+
+            // Watchdog: If no response in 2.5 seconds, retry request.
+            stream.watchdog = setTimeout(() => {
+                addLog(`Chunk ${index} delayed. Retrying...`, 'err');
+                requestChunkWithRetry(conn, transferId, index);
+            }, 2500);
+        }
+
         function resumeInterruptedTransfers(conn) {
             Object.keys(incomingStreams).forEach(transferId => {
                 const stream = incomingStreams[transferId];
                 if (stream.chunks.length < stream.totalChunks) {
-                    conn.send({ type: 'CHUNK_REQ', transferId, index: stream.chunks.length });
+                    requestChunkWithRetry(conn, transferId, stream.chunks.length);
                 }
             });
         }
@@ -428,7 +441,7 @@
                 }
                 const nextIdx = incomingStreams[data.transferId].chunks.length;
                 if (nextIdx < data.totalChunks) {
-                    conn.send({ type: 'CHUNK_REQ', transferId: data.transferId, index: nextIdx });
+                    requestChunkWithRetry(conn, data.transferId, nextIdx);
                 }
                 return;
             }
@@ -470,10 +483,13 @@
                 return;
             }
 
-            // RECEIVER SIDE Analytics
+            // RECEIVER SIDE Analytics & Recovery
             if (data.type === 'FILE_CHUNK') {
                 const stream = incomingStreams[data.transferId];
                 if (!stream) return;
+                
+                // Clear the watchdog timer since we got the expected chunk
+                if (stream.watchdog) clearTimeout(stream.watchdog);
                 
                 if (data.index === stream.chunks.length) {
                     stream.chunks.push(data.chunk);
@@ -507,12 +523,22 @@
                         delete incomingStreams[data.transferId];
                         hideAnalyticsProgressUI(data.transferId);
                     } else {
-                        conn.send({ type: 'CHUNK_REQ', transferId: data.transferId, index: data.index + 1 });
+                        // Securely request next chunk using Watchdog
+                        requestChunkWithRetry(conn, data.transferId, data.index + 1);
                     }
                 }
                 return;
             }
 
+            if (data.type === 'FILE_ERROR') {
+                alert(data.msg);
+                if(incomingStreams[data.transferId]?.watchdog) clearTimeout(incomingStreams[data.transferId].watchdog);
+                delete incomingStreams[data.transferId];
+                hideAnalyticsProgressUI(data.transferId);
+                return;
+            }
+
+            // Simple Payloads
             if (['url', 'text', 'address'].includes(data.type)) {
                 renderInboxCard(data);
                 // INSTANT DELIVERY ACK FOR TEXT TYPES
@@ -589,7 +615,6 @@
         }
 
         function hideAnalyticsProgressUI(id) {
-            // Find all progress boxes matching this transfer ID (could be multiple if broadcasting)
             const elements = document.querySelectorAll(`[id^="prog-${id}"]`);
             elements.forEach(el => setTimeout(() => { el.remove(); }, 2000));
         }
