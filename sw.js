@@ -1,7 +1,8 @@
-const CACHE_NAME = 'hypershare-pro-v1';
+const CACHE_NAME = 'hypershare-pro-v2';
 const ASSETS_TO_CACHE = [
     './share.html',
     './manifest.json',
+    './icons8.png',
     'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'
 ];
