@@ -118,6 +118,15 @@
         .bg-yellow { background: #fef3c7; color: #92400e; }
         .bg-red { background: #fee2e2; color: #991b1b; }
         .bg-blue { background: #dbeafe; color: #1e40af; }
+        .bg-gray { background: #e2e8f0; color: #475569; }
+
+        /* Dynamic Peer List UI */
+        #peer-list-container { margin: 15px 0; display: none; }
+        .peer-list-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 14px; background: #f8fafc; border-radius: 8px;
+            margin-bottom: 8px; font-size: 0.9em; border: 1px solid var(--border-color);
+        }
 
         .progress-box {
             display: none; margin: 15px 0; background: #f8fafc; padding: 12px;
@@ -151,31 +160,45 @@
     <div class="app-container">
         <!-- Tab Bar -->
         <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('tab-share')">⚡ Share Console</button>
-            <button class="tab-btn" onclick="switchTab('tab-inbox')">📥 Received Items (<span id="inbox-count">0</span>)</button>
-            <button class="tab-btn" onclick="switchTab('tab-logs')">📋 Activity Logs</button>
+            <button class="tab-btn active" onclick="switchTab('tab-share')">⚡ Console</button>
+            <button class="tab-btn" onclick="switchTab('tab-inbox')">📥 Inbox (<span id="inbox-count">0</span>)</button>
+            <button class="tab-btn" onclick="switchTab('tab-logs')">📋 Logs</button>
         </div>
 
         <!-- SHARE CONSOLE TAB -->
         <div id="tab-share" class="tab-content active">
-            <!-- Host QR Code Section (Only shown on primary host) -->
+            
+            <!-- Host QR Code & Mesh Roster -->
             <div id="host-qr-section" style="text-align: center; margin-bottom: 15px;">
-                <p style="font-size: 0.9em; color: var(--text-muted);">Scan to connect additional devices:</p>
+                <p style="font-size: 0.9em; color: var(--text-muted);">Scan to join the Mesh Network:</p>
                 <div id="qrcode"></div>
-                <div style="display: flex; justify-content: center; gap: 6px; flex-wrap: wrap;">
+                
+                <div style="margin: 10px 0;">
                     <span id="conn-status-badge" class="badge bg-yellow">Waiting for peers...</span>
-                    <span id="peer-count-badge" class="badge bg-blue">0 Devices Connected</span>
-                    <span id="dist-badge" class="badge bg-green" style="display: none;">Distance: Calculating...</span>
+                    <span id="peer-count-badge" class="badge bg-gray">0 Devices Connected</span>
+                </div>
+
+                <div id="peer-list-container">
+                    <!-- Javascript populates active devices here -->
                 </div>
             </div>
 
-            <!-- Receiver Status Banner (Shown if running in receiver mode) -->
+            <!-- Receiver Status Banner -->
             <div id="receiver-status-section" style="display: none; text-align: center; margin-bottom: 15px;">
                 <span id="client-conn-badge" class="badge bg-yellow">Connecting to Host Mesh...</span>
             </div>
 
-            <!-- Send Controls (Usable by both Host and Connected Receivers) -->
-            <div id="send-controls" style="border-top: 1px solid var(--border-color); padding-top: 15px;">
+            <!-- Unified Send Controls -->
+            <div id="send-controls" style="display: none; border-top: 1px solid var(--border-color); padding-top: 15px;">
+                
+                <!-- Target Selector (Only useful for Host) -->
+                <div id="target-selector-group" class="input-group" style="display: none;">
+                    <label>Target Device</label>
+                    <select id="target-device">
+                        <option value="ALL">Broadcast to Entire Mesh</option>
+                    </select>
+                </div>
+
                 <div class="input-group">
                     <label>Transfer Type</label>
                     <select id="share-type" onchange="toggleInputFields()">
@@ -199,10 +222,9 @@
                     <textarea id="p2p-text" rows="3" placeholder="Type plain text message..."></textarea>
                 </div>
 
-                <!-- Progress Bar Component -->
                 <div id="transfer-progress-box" class="progress-box">
                     <div style="display: flex; justify-content: space-between; font-size: 0.85em; font-weight: 600;">
-                        <span id="progress-status">Streaming file...</span>
+                        <span id="progress-status">Streaming...</span>
                         <span id="progress-percent">0%</span>
                     </div>
                     <div class="progress-bar-bg">
@@ -210,7 +232,7 @@
                     </div>
                 </div>
 
-                <button class="btn btn-primary" id="send-btn" onclick="initiateTransfer()">Send / Broadcast to Mesh</button>
+                <button class="btn btn-primary" id="send-btn" onclick="initiateTransfer()">Send Data</button>
             </div>
         </div>
 
@@ -230,15 +252,19 @@
     </div>
 
     <script>
-        const CHUNK_SIZE = 64 * 1024; // 64KB chunks for smooth streaming
+        const CHUNK_SIZE = 64 * 1024; 
         let peerInstance = null;
-        let connections = []; // Stores all active peer connection instances
+        
+        // HOST VARS: Map of deviceId -> { conn, name, distance }
+        let connectedPeers = new Map(); 
+        
+        // CLIENT VARS: Single connection back to Host
+        let hostConnection = null; 
+
         let sessionPin = Math.random().toString(36).substring(2, 8).toUpperCase();
         let isHost = true;
         let myLocation = null;
         let inboxCounter = 0;
-
-        // Active incoming stream buffers mapped by transferId
         let incomingStreams = {};
 
         const peerConfig = {
@@ -250,10 +276,39 @@
             }
         };
 
+        // --- IDENTITY MANAGEMENT (Fixes Phantom/Refresh Issues) ---
+        function getMyDeviceId() {
+            let id = localStorage.getItem('hyper_share_id');
+            if (!id) {
+                id = Math.random().toString(36).substr(2, 10);
+                localStorage.setItem('hyper_share_id', id);
+            }
+            return id;
+        }
+
+        function getMyDeviceName() {
+            let name = localStorage.getItem('hyper_share_name');
+            if (!name) {
+                const agent = navigator.userAgent;
+                let os = "Web Peer";
+                if (/android/i.test(agent)) os = "Android";
+                else if (/iPad|iPhone|iPod/.test(agent)) os = "iOS";
+                else if (/Mac OS/.test(agent)) os = "Mac";
+                else if (/Windows/.test(agent)) os = "Windows PC";
+                
+                name = `${os}-${Math.floor(1000 + Math.random() * 9000)}`;
+                localStorage.setItem('hyper_share_name', name);
+            }
+            return name;
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
             const receivePeer = urlParams.get('receive_peer');
             const pin = urlParams.get('pin');
+
+            // Force location fetch early
+            getGeo(loc => { myLocation = loc; });
 
             if (receivePeer && pin) {
                 isHost = false;
@@ -265,7 +320,6 @@
             }
         });
 
-        // --- TAB CONTROLLER ---
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -292,54 +346,11 @@
             list.prepend(el);
         }
 
-        function updatePeerCountUI() {
-            if (isHost) {
-                const badge = document.getElementById('peer-count-badge');
-                const connBadge = document.getElementById('conn-status-badge');
-                badge.innerText = `${connections.length} Device(s) Connected`;
-                if (connections.length > 0) {
-                    connBadge.className = 'badge bg-green';
-                    connBadge.innerText = 'Mesh Active';
-                } else {
-                    connBadge.className = 'badge bg-yellow';
-                    connBadge.innerText = 'Waiting for peers...';
-                    document.getElementById('dist-badge').style.display = 'none';
-                }
-            }
-        }
-
-        function getDeviceName(agent) {
-            if (/android/i.test(agent)) return "Android";
-            if (/iPad|iPhone|iPod/.test(agent)) return "iOS Device";
-            if (/Mac OS/.test(agent)) return "Mac";
-            if (/Windows/.test(agent)) return "Windows PC";
-            return "Web Peer";
-        }
-
-        // --- GEOLOCATION HELPER (HAVERSINE) ---
-        function calcDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371e3;
-            const f1 = lat1 * Math.PI / 180, f2 = lat2 * Math.PI / 180;
-            const df = (lat2 - lat1) * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(df / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
-            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        }
-
-        function getGeo(callback) {
-            if ("geolocation" in navigator) {
-                navigator.geolocation.getCurrentPosition(
-                    pos => callback({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-                    () => callback(null),
-                    { timeout: 5000 }
-                );
-            } else { callback(null); }
-        }
-
-        // --- HOST CORE ---
+        // --- HOST LOGIC ---
         function initHost() {
             addLog(`Session created. PIN: ${sessionPin}`);
+            document.getElementById('target-selector-group').style.display = 'block';
             peerInstance = new Peer(peerConfig);
-            getGeo(loc => { myLocation = loc; });
 
             peerInstance.on('open', (id) => {
                 const link = `${window.location.href.split('?')[0]}?receive_peer=${id}&pin=${sessionPin}`;
@@ -347,78 +358,143 @@
             });
 
             peerInstance.on('connection', (conn) => {
-                conn.on('data', (data) => handleIncomingProtocol(conn, data));
+                conn.on('data', (data) => handleHostIncoming(conn, data));
                 conn.on('close', () => {
-                    connections = connections.filter(c => c.peer !== conn.peer);
-                    updatePeerCountUI();
-                    addLog(`Peer disconnected.`);
+                    // Only delete if the disconnected conn is the exact object mapped (handles refresh races)
+                    if (conn.devId && connectedPeers.has(conn.devId)) {
+                        if (connectedPeers.get(conn.devId).conn === conn) {
+                            connectedPeers.delete(conn.devId);
+                            updateHostUI();
+                            addLog(`Device disconnected.`);
+                        }
+                    }
                 });
             });
         }
 
-        // --- CLIENT CORE ---
-        function initClient(targetHostId, targetPin) {
-            peerInstance = new Peer(peerConfig);
-            peerInstance.on('open', () => {
-                const conn = peerInstance.connect(targetHostId);
-                conn.on('open', () => {
-                    conn.send({ type: 'HANDSHAKE', pin: targetPin, agent: navigator.userAgent });
-                    connections = [conn];
-                    const badge = document.getElementById('client-conn-badge');
-                    badge.className = 'badge bg-green';
-                    badge.innerText = '✅ Connected to Host Mesh';
-                    addLog('Secured connection to Host established.');
-                });
-
-                conn.on('data', (data) => handleIncomingProtocol(conn, data));
-                conn.on('close', () => {
-                    connections = [];
-                    const badge = document.getElementById('client-conn-badge');
-                    badge.className = 'badge bg-red';
-                    badge.innerText = '❌ Disconnected from Host';
-                    addLog('Connection closed by host.', true);
-                });
-            });
-        }
-
-        // --- DATA PROTOCOL HANDLER ---
-        function handleIncomingProtocol(conn, data) {
-            // Handshake & Security
+        function handleHostIncoming(conn, data) {
             if (data.type === 'HANDSHAKE') {
                 if (data.pin === sessionPin) {
-                    connections.push(conn);
-                    updatePeerCountUI();
-                    addLog(`Authenticated: ${getDeviceName(data.agent)}`);
+                    const devId = data.deviceId;
+                    
+                    // Kill phantom connections on refresh
+                    if (connectedPeers.has(devId)) {
+                        addLog(`Reconnecting existing device: ${data.deviceName}`);
+                        try { connectedPeers.get(devId).conn.close(); } catch(e){}
+                    } else {
+                        addLog(`Authenticated: ${data.deviceName}`);
+                    }
+
+                    conn.devId = devId; // Tag connection object
+                    connectedPeers.set(devId, { conn: conn, name: data.deviceName, distance: 'Calculating...' });
+                    
+                    updateHostUI();
+                    document.getElementById('send-controls').style.display = 'block';
                     conn.send({ type: 'GEO_REQ' });
                 } else {
-                    conn.send({ type: 'ERROR', msg: 'Invalid Authentication PIN' });
+                    conn.send({ type: 'ERROR', msg: 'Invalid PIN' });
                     conn.close();
                 }
                 return;
             }
 
-            // Geolocation Distance Handshake
-            if (data.type === 'GEO_REQ') {
-                getGeo(loc => { if (loc) conn.send({ type: 'GEO_RES', loc: loc }); });
-                return;
-            }
-            if (data.type === 'GEO_RES' && data.loc && myLocation) {
-                const meters = calcDistance(myLocation.lat, myLocation.lon, data.loc.lat, data.loc.lon);
-                const badge = document.getElementById('dist-badge');
-                badge.style.display = 'inline-block';
-                badge.innerText = meters < 1000 ? `📍 ~${Math.round(meters)}m away` : `📍 ~${(meters / 1000).toFixed(1)}km away`;
+            if (data.type === 'GEO_RES') {
+                const devId = conn.devId;
+                if (connectedPeers.has(devId)) {
+                    let peer = connectedPeers.get(devId);
+                    if (data.loc && myLocation) {
+                        const meters = calcDistance(myLocation.lat, myLocation.lon, data.loc.lat, data.loc.lon);
+                        peer.distance = meters < 1000 ? `~${Math.round(meters)}m` : `~${(meters / 1000).toFixed(1)}km`;
+                    } else {
+                        peer.distance = 'Location Denied';
+                    }
+                    updateHostUI();
+                }
                 return;
             }
 
-            // Stream Handling (Chunked File Transfer)
+            // Treat any other data as an incoming payload from Receiver (Two-Way Bridge)
+            processStandardPayload(data);
+        }
+
+        function updateHostUI() {
+            if (!isHost) return;
+            const countBadge = document.getElementById('peer-count-badge');
+            const connBadge = document.getElementById('conn-status-badge');
+            const listContainer = document.getElementById('peer-list-container');
+            const targetSelect = document.getElementById('target-device');
+            
+            countBadge.innerText = `${connectedPeers.size} Device(s) Connected`;
+            targetSelect.innerHTML = '<option value="ALL">Broadcast to Entire Mesh</option>';
+            
+            if (connectedPeers.size > 0) {
+                connBadge.className = 'badge bg-green';
+                connBadge.innerText = 'Mesh Active';
+                listContainer.style.display = 'block';
+                
+                let html = '';
+                connectedPeers.forEach((peer, id) => {
+                    html += `<div class="peer-list-item">
+                                <strong>📱 ${peer.name}</strong> 
+                                <span class="badge bg-blue">📍 ${peer.distance}</span>
+                             </div>`;
+                    targetSelect.innerHTML += `<option value="${id}">${peer.name}</option>`;
+                });
+                listContainer.innerHTML = html;
+            } else {
+                connBadge.className = 'badge bg-yellow';
+                connBadge.innerText = 'Waiting for peers...';
+                listContainer.style.display = 'none';
+                document.getElementById('send-controls').style.display = 'none';
+            }
+        }
+
+        // --- CLIENT LOGIC ---
+        function initClient(targetHostId, targetPin) {
+            peerInstance = new Peer(peerConfig);
+            peerInstance.on('open', () => {
+                hostConnection = peerInstance.connect(targetHostId);
+                
+                hostConnection.on('open', () => {
+                    hostConnection.send({ 
+                        type: 'HANDSHAKE', 
+                        pin: targetPin, 
+                        deviceId: getMyDeviceId(),
+                        deviceName: getMyDeviceName()
+                    });
+                    
+                    const badge = document.getElementById('client-conn-badge');
+                    badge.className = 'badge bg-green';
+                    badge.innerText = '✅ Connected to Host';
+                    addLog('Secured connection to Host established.');
+                    document.getElementById('send-controls').style.display = 'block';
+                });
+
+                hostConnection.on('data', (data) => {
+                    if (data.type === 'GEO_REQ') {
+                        getGeo(loc => { hostConnection.send({ type: 'GEO_RES', loc: loc }); });
+                        return;
+                    }
+                    if (data.type === 'ERROR') return alert(data.msg);
+                    
+                    processStandardPayload(data);
+                });
+
+                hostConnection.on('close', () => {
+                    hostConnection = null;
+                    const badge = document.getElementById('client-conn-badge');
+                    badge.className = 'badge bg-red';
+                    badge.innerText = '❌ Disconnected from Host';
+                    document.getElementById('send-controls').style.display = 'none';
+                    addLog('Connection closed by host.', true);
+                });
+            });
+        }
+
+        // --- CORE DATA PROCESSING (Used by both Host & Client) ---
+        function processStandardPayload(data) {
             if (data.type === 'FILE_HEADER') {
-                incomingStreams[data.transferId] = {
-                    name: data.name,
-                    size: data.size,
-                    mime: data.mime,
-                    received: 0,
-                    chunks: []
-                };
+                incomingStreams[data.transferId] = { name: data.name, size: data.size, mime: data.mime, received: 0, chunks: [] };
                 showProgressUI(`Receiving: ${data.name}`, 0);
                 return;
             }
@@ -433,8 +509,8 @@
                 showProgressUI(`Receiving: ${stream.name}`, percent);
 
                 if (stream.received >= stream.size) {
-                    const completeBlob = new Blob(stream.chunks, { type: stream.mime || 'application/octet-stream' });
-                    renderInboxCard({ type: 'file', fileBlob: completeBlob, name: stream.name });
+                    const blob = new Blob(stream.chunks, { type: stream.mime || 'application/octet-stream' });
+                    renderInboxCard({ type: 'file', fileBlob: blob, name: stream.name });
                     addLog(`Received File: ${stream.name} (${(stream.size / 1024 / 1024).toFixed(2)} MB)`);
                     delete incomingStreams[data.transferId];
                     hideProgressUI();
@@ -442,26 +518,47 @@
                 return;
             }
 
-            // Standard Payloads (Text, URL, Address)
             if (['url', 'text', 'address'].includes(data.type)) {
                 renderInboxCard(data);
                 addLog(`Received ${data.type.toUpperCase()}`);
             }
         }
 
-        // --- BROADCAST & SEND PIPELINE ---
+        // --- NETWORK SENDER PIPELINE ---
+        function safeSendToTargets(payload, targetId = 'ALL') {
+            if (isHost) {
+                if (targetId === 'ALL') {
+                    connectedPeers.forEach(peer => {
+                        try { if (peer.conn.open) peer.conn.send(payload); } catch(e){}
+                    });
+                } else {
+                    if (connectedPeers.has(targetId)) {
+                        try { 
+                            let p = connectedPeers.get(targetId);
+                            if (p.conn.open) p.conn.send(payload); 
+                        } catch(e){}
+                    }
+                }
+            } else {
+                // Client always sends back to host
+                if (hostConnection && hostConnection.open) hostConnection.send(payload);
+            }
+        }
+
         async function initiateTransfer() {
-            if (connections.length === 0) return alert("No active connections in mesh.");
+            if (isHost && connectedPeers.size === 0) return alert("No active connections in mesh.");
+            if (!isHost && (!hostConnection || !hostConnection.open)) return alert("Not connected to host.");
 
             const type = document.getElementById('share-type').value;
             const btn = document.getElementById('send-btn');
+            const targetId = isHost ? document.getElementById('target-device').value : 'ALL';
 
             if (type === 'file') {
                 const file = document.getElementById('p2p-file').files[0];
                 if (!file) return alert("Select a file to transfer.");
 
                 btn.disabled = true;
-                await streamFileToMesh(file);
+                await streamFileToMesh(file, targetId);
                 document.getElementById('p2p-file').value = '';
                 btn.disabled = false;
             } else {
@@ -478,53 +575,34 @@
                 }
 
                 if (!payload.content) return;
-                broadcastPayload(payload);
+                safeSendToTargets(payload, targetId);
                 document.getElementById(`p2p-${type}`).value = '';
-                addLog(`Broadcasted ${type}`);
+                addLog(`Sent ${type} ${targetId === 'ALL' ? 'to Mesh' : 'to Target'}`);
             }
         }
 
-        function broadcastPayload(payload) {
-            connections.forEach(conn => {
-                if (conn.open) conn.send(payload);
-            });
-        }
-
-        // 64KB Chunked Stream Producer
-        async function streamFileToMesh(file) {
+        async function streamFileToMesh(file, targetId) {
             const transferId = Math.random().toString(36).substring(2, 9);
             const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
-            // Send Header
-            broadcastPayload({
-                type: 'FILE_HEADER',
-                transferId: transferId,
-                name: file.name,
-                size: file.size,
-                mime: file.type
-            });
-
-            showProgressUI(`Broadcasting: ${file.name}`, 0);
+            safeSendToTargets({ type: 'FILE_HEADER', transferId: transferId, name: file.name, size: file.size, mime: file.type }, targetId);
+            showProgressUI(`Transferring: ${file.name}`, 0);
 
             for (let i = 0; i < totalChunks; i++) {
                 const start = i * CHUNK_SIZE;
                 const end = Math.min(start + CHUNK_SIZE, file.size);
                 const chunkBuffer = await file.slice(start, end).arrayBuffer();
 
-                broadcastPayload({
-                    type: 'FILE_CHUNK',
-                    transferId: transferId,
-                    chunk: chunkBuffer
-                });
-
+                safeSendToTargets({ type: 'FILE_CHUNK', transferId: transferId, chunk: chunkBuffer }, targetId);
                 const percent = Math.round(((i + 1) / totalChunks) * 100);
-                showProgressUI(`Broadcasting: ${file.name}`, percent);
+                showProgressUI(`Transferring: ${file.name}`, percent);
             }
 
-            addLog(`Sent File: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+            addLog(`Sent File: ${file.name}`);
             hideProgressUI();
         }
 
+        // --- UI HELPERS ---
         function showProgressUI(status, percent) {
             const box = document.getElementById('transfer-progress-box');
             box.style.display = 'block';
@@ -534,12 +612,9 @@
         }
 
         function hideProgressUI() {
-            setTimeout(() => {
-                document.getElementById('transfer-progress-box').style.display = 'none';
-            }, 1200);
+            setTimeout(() => { document.getElementById('transfer-progress-box').style.display = 'none'; }, 1000);
         }
 
-        // --- INBOX & UI CARD BUILDER ---
         function renderInboxCard(data) {
             document.getElementById('empty-inbox-msg').style.display = 'none';
             inboxCounter++;
@@ -564,7 +639,6 @@
                     <button class="btn btn-primary btn-sm" onclick="window.open('${data.content}', '_blank')">🚀 Launch</button>
                     <button class="btn btn-secondary btn-sm" onclick="triggerWebShare('Link', '${data.content}', '${data.content}')">📤 Share</button>
                 `;
-                // Attempt popup auto-launch
                 window.open(data.content, '_blank');
             } else if (data.type === 'address') {
                 bodyHtml = `<strong>📍 Address:</strong><br>${data.content.replace(/\n/g, '<br>')}`;
@@ -580,21 +654,31 @@
                 `;
             }
 
-            card.innerHTML = `
-                <div style="margin-bottom: 8px;">${bodyHtml}</div>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">${actionsHtml}</div>
-            `;
+            card.innerHTML = `<div style="margin-bottom: 8px;">${bodyHtml}</div><div style="display: flex; gap: 8px; flex-wrap: wrap;">${actionsHtml}</div>`;
             stack.prepend(card);
         }
 
-        // --- WEB SHARE API & VCARD EXPORTERS ---
+        // --- MATH & EXPORTS ---
+        function calcDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3;
+            const f1 = lat1 * Math.PI / 180, f2 = lat2 * Math.PI / 180;
+            const df = (lat2 - lat1) * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(df / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+
+        function getGeo(callback) {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    pos => callback({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+                    () => callback(null), { timeout: 5000 }
+                );
+            } else { callback(null); }
+        }
+
         function triggerWebShare(title, text, url) {
-            if (navigator.share) {
-                navigator.share({ title: title, text: text, url: url || undefined }).catch(() => {});
-            } else {
-                navigator.clipboard.writeText(url || text);
-                alert("Copied to clipboard (Native sharing unsupported on this browser).");
-            }
+            if (navigator.share) { navigator.share({ title, text, url: url || undefined }).catch(()=>{}); } 
+            else { navigator.clipboard.writeText(url || text); alert("Copied to clipboard (Native sharing unsupported here)."); }
         }
 
         function saveVCard(addr) {
