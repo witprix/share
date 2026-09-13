@@ -94,7 +94,6 @@
             margin-bottom: 8px; font-size: 0.9em; border: 1px solid var(--border-color);
         }
 
-        /* Upgraded scrollable queue UI */
         #queue-status { 
             display: none; background: #eef2ff; padding: 12px; border-radius: 8px; 
             max-height: 140px; overflow-y: auto; margin-bottom: 12px;
@@ -167,22 +166,26 @@
                 <div id="input-address" class="input-group" style="display: none;"><textarea id="p2p-address" rows="3" placeholder="Enter street address..."></textarea></div>
                 <div id="input-text" class="input-group" style="display: none;"><textarea id="p2p-text" rows="3" placeholder="Type plain text message..."></textarea></div>
 
-                <!-- Upgraded Queue View -->
                 <div id="queue-status"></div>
-                
                 <div id="progress-container"></div>
 
                 <button class="btn btn-primary" id="send-btn" onclick="initiateTransfer()">Send Data</button>
             </div>
         </div>
 
+        <!-- INBOX TAB -->
         <div id="tab-inbox" class="tab-content">
-            <h3 style="text-align: left;">Inbox Stack</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0; text-align: left;">Inbox Stack</h3>
+                <button id="btn-download-all" class="btn btn-primary btn-sm" style="display: none;" onclick="downloadAllFiles()">💾 Download All Files</button>
+            </div>
+            
             <div id="inbox-stack" class="card-stack">
                 <p id="empty-inbox-msg" style="color: var(--text-muted); text-align: center; padding: 20px;">No items received yet.</p>
             </div>
         </div>
 
+        <!-- LOGS TAB -->
         <div id="tab-logs" class="tab-content">
             <h3 style="text-align: left;">Session Audit Trail</h3>
             <div class="log-container" id="log-list"></div>
@@ -499,13 +502,11 @@
                 addLog(`Delivered to ${peerName}: ${data.item}`, 'success');
                 
                 if (data.transferId) {
-                    const metricId = `${data.transferId}_${conn.devId || 'client'}`;
                     const sf = sharedFiles.get(data.transferId);
                     
-                    showAnalyticsProgressUI(metricId, `Sent: ${data.item}`, 100, formatBytes(sf?sf.size:0), formatBytes(sf?sf.size:0), "0.00", "Complete", false, true);
-                    hideAnalyticsProgressUI(metricId);
+                    showAnalyticsProgressUI(data.transferId, `Sent: ${data.item}`, 100, formatBytes(sf?sf.size:0), formatBytes(sf?sf.size:0), "0.00", "Complete", false, true);
+                    hideAnalyticsProgressUI(data.transferId);
 
-                    // Advance Queue!
                     if (activeTransferId === data.transferId) {
                         activeTransferId = null;
                         setTimeout(() => { processNextInQueue(); }, 800);
@@ -529,13 +530,12 @@
                 return;
             }
 
-            // Sender sending chunks
             if (data.type === 'CHUNK_REQ') {
                 const sf = sharedFiles.get(data.transferId);
                 if (!sf) return conn.send({ type: 'FILE_ABORTED', transferId: data.transferId, msg: 'Sender refreshed or cancelled file.' });
                 if (sf.paused) return; 
                 
-                const metricId = `${data.transferId}_${conn.devId || 'client'}`;
+                const metricId = data.transferId; 
                 if (!transferMetrics.has(metricId)) { transferMetrics.set(metricId, { startTime: Date.now(), transferId: data.transferId }); }
                 
                 const m = transferMetrics.get(metricId);
@@ -549,7 +549,7 @@
                 }
 
                 const percent = Math.min(Math.round((currentBytes / sf.size) * 100), 100);
-                showAnalyticsProgressUI(metricId, `To ${peerName}: ${sf.name}`, percent, formatBytes(currentBytes), formatBytes(sf.size), speedMB.toFixed(2), formatTime(etaSecs), sf.paused);
+                showAnalyticsProgressUI(metricId, `Sending: ${sf.name}`, percent, formatBytes(currentBytes), formatBytes(sf.size), speedMB.toFixed(2), formatTime(etaSecs), sf.paused);
 
                 const start = data.index * CHUNK_SIZE;
                 try {
@@ -561,7 +561,6 @@
                 return;
             }
 
-            // Receiver writing chunks
             if (data.type === 'FILE_CHUNK') {
                 const stream = incomingStreams[data.transferId];
                 if (!stream || stream.paused) return;
@@ -613,7 +612,6 @@
                 delete incomingStreams[data.transferId];
                 hideAnalyticsProgressUI(data.transferId);
                 
-                // If sender aborted, trigger next in queue
                 if (activeTransferId === data.transferId) {
                     activeTransferId = null;
                     setTimeout(() => processNextInQueue(), 1000);
@@ -627,9 +625,7 @@
             }
         }
 
-        // --- CONTROL ACTIONS (PAUSE/RESUME/CANCEL) ---
-        function toggleTransferPause(uiId) {
-            const transferId = uiId.split('_')[0]; 
+        function toggleTransferPause(transferId) {
             let isPaused = false;
 
             if (incomingStreams[transferId]) {
@@ -643,7 +639,7 @@
                 isPaused = sf.paused;
             } else return;
 
-            updatePauseUI(uiId, isPaused);
+            updatePauseUI(transferId, isPaused);
             safeSendToTargets({ type: 'TRANSFER_CONTROL', action: isPaused ? 'PAUSE' : 'RESUME', transferId: transferId });
 
             if (!isPaused && incomingStreams[transferId]) {
@@ -661,14 +657,12 @@
             }
         }
 
-        function cancelTransferCommand(uiId) {
-            const transferId = uiId.split('_')[0];
+        function cancelTransferCommand(transferId) {
             safeSendToTargets({ type: 'TRANSFER_CONTROL', action: 'CANCEL', transferId: transferId });
-            executeLocalCancel(uiId);
+            executeLocalCancel(transferId);
         }
 
-        function executeLocalCancel(uiId) {
-            const transferId = uiId.split('_')[0];
+        function executeLocalCancel(transferId) {
             if (incomingStreams[transferId]) {
                 if(incomingStreams[transferId].watchdog) clearTimeout(incomingStreams[transferId].watchdog);
                 dbAbortTransfer(transferId, incomingStreams[transferId].totalChunks);
@@ -676,7 +670,7 @@
             }
             if (sharedFiles.has(transferId)) sharedFiles.delete(transferId);
             
-            const box = document.getElementById(`prog-${uiId}`);
+            const box = document.getElementById(`prog-${transferId}`);
             if (box) {
                 box.innerHTML = `<div style="color:var(--danger); font-weight:bold; padding:10px; text-align:center;">Transfer Cancelled</div>`;
                 setTimeout(() => box.remove(), 2000);
@@ -692,6 +686,12 @@
         function renderInboxCard(data) {
             document.getElementById('empty-inbox-msg').style.display = 'none';
             inboxCounter++; document.getElementById('inbox-count').innerText = inboxCounter;
+            
+            // Show Download All button if it's a file
+            if (data.type === 'file') {
+                document.getElementById('btn-download-all').style.display = 'inline-flex';
+            }
+
             const stack = document.getElementById('inbox-stack');
             const card = document.createElement('div');
             card.className = 'share-card';
@@ -700,7 +700,8 @@
             if (data.type === 'file') {
                 const url = URL.createObjectURL(data.fileBlob);
                 bodyHtml = `<strong>📁 File:</strong> ${data.name}`;
-                actionsHtml = `<a href="${url}" download="${data.name}" class="btn btn-primary btn-sm">💾 Download</a>`;
+                // Crucial: add 'data-download-link' class so the Download All function can find it
+                actionsHtml = `<a href="${url}" download="${data.name}" class="btn btn-primary btn-sm data-download-link">💾 Download</a>`;
             } else if (data.type === 'url') {
                 bodyHtml = `<strong>🔗 URL:</strong><br><a href="${data.content}" target="_blank" style="color:var(--primary); word-break:break-all;">${data.content}</a>`;
                 actionsHtml = `<button class="btn btn-primary btn-sm" onclick="window.open('${data.content}', '_blank');">🚀 Launch</button>`;
@@ -714,6 +715,22 @@
 
             card.innerHTML = `<div style="margin-bottom: 8px;">${bodyHtml}</div><div style="display: flex; gap: 8px; flex-wrap: wrap;">${actionsHtml}</div>`;
             stack.prepend(card);
+        }
+
+        // --- DOWNLOAD ALL FUNCTION ---
+        function downloadAllFiles() {
+            const links = document.querySelectorAll('.data-download-link');
+            if (links.length === 0) return alert("No files available to download.");
+
+            const confirmMsg = `Download ${links.length} files?\n\nNote: Your browser may block multiple downloads. If prompted, please click "Allow" to download multiple files.`;
+            
+            if (confirm(confirmMsg)) {
+                let delay = 0;
+                links.forEach(link => {
+                    setTimeout(() => { link.click(); }, delay);
+                    delay += 350; // Stagger by 350ms to help bypass aggressive popup blockers
+                });
+            }
         }
 
         function showAnalyticsProgressUI(id, title, percent, currentB, totalB, speed, eta, isPaused = false, isDone = false) {
@@ -769,7 +786,6 @@
             }
         }
 
-        // --- QUEUE INITIATION & PROCESSING ---
         async function initiateTransfer() {
             if (isHost && connectedPeers.size === 0) return alert("No active connections.");
             if (!isHost && (!hostConnection || !hostConnection.open)) return alert("Not connected to host.");
@@ -781,14 +797,13 @@
                 const files = document.getElementById('p2p-file').files;
                 if (!files || files.length === 0) return alert("Select at least one file.");
                 
-                // Push all selected files into the queue array
                 for (let i = 0; i < files.length; i++) {
                     transferQueue.push(files[i]);
                 }
                 
                 document.getElementById('p2p-file').value = '';
                 updateQueueUI();
-                processNextInQueue(); // Kickstart the queue
+                processNextInQueue();
             } else {
                 let payload = { type: type };
                 if (type === 'url') { let u = document.getElementById('p2p-url').value.trim(); if (!/^https?:\/\//i.test(u)) u = 'https://' + u; payload.content = u; } 
@@ -800,15 +815,13 @@
         }
 
         function processNextInQueue() {
-            // Prevent parallel processing if one is currently active
             if (activeTransferId !== null) return; 
             
             if (transferQueue.length === 0) {
                 updateQueueUI();
-                return; // Queue finished
+                return;
             }
 
-            // Pop the next file in line
             const file = transferQueue.shift();
             updateQueueUI();
 
@@ -817,12 +830,10 @@
             
             safeSendToTargets({ type: 'FILE_OFFER', transferId: activeTransferId, name: file.name, size: file.size, totalChunks: Math.ceil(file.size/CHUNK_SIZE), mime: file.type }, currentTargetId);
             
-            // Render initial 0% UI block immediately
-            showAnalyticsProgressUI(`${activeTransferId}_${currentTargetId}`, `Sending: ${file.name}`, 0, "0 B", formatBytes(file.size), "0.00", "Calculating...", false, false);
+            showAnalyticsProgressUI(activeTransferId, `Sending: ${file.name}`, 0, "0 B", formatBytes(file.size), "0.00", "Calculating...", false, false);
             addLog(`Started sending from queue: ${file.name}`, 'info');
         }
 
-        // --- UPGRADED QUEUE UI FUNCTION ---
         function updateQueueUI() {
             const queueDiv = document.getElementById('queue-status');
             if (transferQueue.length > 0) {
