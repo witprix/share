@@ -8,6 +8,7 @@
     <!-- Core Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     
     <style>
         :root {
@@ -34,6 +35,17 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            transition: background 0.2s;
+        }
+
+        /* Drag & Drop Overlay */
+        body.dragover { background: #312e81; }
+        body.dragover::after {
+            content: 'Drop files anywhere to send!';
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(79, 70, 229, 0.9); color: white;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 2em; font-weight: bold; z-index: 9999; pointer-events: none;
         }
 
         .app-container {
@@ -45,6 +57,8 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            position: relative;
+            z-index: 10;
         }
 
         .tabs { display: flex; background: #f8fafc; border-bottom: 1px solid var(--border-color); }
@@ -69,7 +83,9 @@
         .btn-danger { background: #fee2e2; color: var(--danger); border: 1px solid #fca5a5; }
         .btn-danger:hover { background: #fca5a5; color: white; }
         .btn-success { background: var(--success); color: white; }
+        .btn-success:hover { background: #059669; }
         .btn-sm { padding: 6px 10px; font-size: 0.8em; width: auto; }
+        .btn:disabled { opacity: 0.7; cursor: not-allowed; }
 
         .input-group { margin-bottom: 14px; }
         .input-group label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.85em; color: var(--text-muted); }
@@ -175,9 +191,12 @@
 
         <!-- INBOX TAB -->
         <div id="tab-inbox" class="tab-content">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 8px;">
                 <h3 style="margin: 0; text-align: left;">Inbox Stack</h3>
-                <button id="btn-download-all" class="btn btn-primary btn-sm" style="display: none;" onclick="downloadAllFiles()">💾 Download All Files</button>
+                <div style="display: flex; gap: 8px;">
+                    <button id="btn-download-all" class="btn btn-primary btn-sm" style="display: none;" onclick="downloadAllFiles()">💾 Download All</button>
+                    <button id="btn-zip-all" class="btn btn-success btn-sm" style="display: none;" onclick="downloadAllAsZip()">📦 Download as ZIP</button>
+                </div>
             </div>
             
             <div id="inbox-stack" class="card-stack">
@@ -193,20 +212,21 @@
     </div>
 
     <script>
-        const CHUNK_SIZE = 256 * 1024; // 256KB chunks for high speed
+        const CHUNK_SIZE = 256 * 1024; 
         let peerInstance = null;
         let connectedPeers = new Map(); 
         let hostConnection = null; 
 
         // Sender State
         let sharedFiles = new Map(); 
-        let transferQueue = []; // Array holding pending File objects
-        let activeTransferId = null; // Currently transmitting file ID
+        let transferQueue = []; 
+        let activeTransferId = null; 
         let currentTargetId = 'ALL';
         
         // Receiver State
         let incomingStreams = {};    
         let transferMetrics = new Map(); 
+        let receivedFilesForZip = []; // Holds Blobs in RAM
 
         let sessionPin = Math.random().toString(36).substring(2, 8).toUpperCase();
         let isHost = true;
@@ -222,7 +242,35 @@
             }
         };
 
-        // --- PREVENT ACCIDENTAL REFRESH DATA LOSS ---
+        // --- GLOBAL DRAG AND DROP ---
+        window.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (isHost && connectedPeers.size === 0) return;
+            if (!isHost && (!hostConnection || !hostConnection.open)) return;
+            document.body.classList.add('dragover');
+        });
+        window.addEventListener('dragleave', (e) => {
+            if(e.target === document.body || e.target === document.documentElement) { document.body.classList.remove('dragover'); }
+        });
+        window.addEventListener('drop', (e) => {
+            e.preventDefault();
+            document.body.classList.remove('dragover');
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                if (isHost && connectedPeers.size === 0) return alert("No active connections to send to.");
+                if (!isHost && (!hostConnection || !hostConnection.open)) return alert("Not connected to host.");
+                
+                document.getElementById('share-type').value = 'file';
+                toggleInputFields();
+                switchTab('tab-share');
+                
+                for (let i = 0; i < e.dataTransfer.files.length; i++) {
+                    transferQueue.push(e.dataTransfer.files[i]);
+                }
+                updateQueueUI();
+                processNextInQueue();
+            }
+        });
+
         window.addEventListener('beforeunload', (e) => {
             let active = false;
             if (activeTransferId || transferQueue.length > 0) active = true;
@@ -230,7 +278,7 @@
             if (active) { e.preventDefault(); e.returnValue = ''; }
         });
 
-        // --- INDEXED-DB CORE (Persistent Storage) ---
+        // --- INDEXED-DB CORE ---
         function initDB() {
             return new Promise((resolve, reject) => {
                 const req = indexedDB.open('HyperShareDB', 1);
@@ -390,6 +438,12 @@
                         connectedPeers.delete(conn.devId);
                         updateHostUI();
                         addLog(`${name} disconnected.`, 'err');
+
+                        // DISCONNECTION HANDLING
+                        if (activeTransferId && isHost) {
+                            addLog(`Active transfer aborted due to peer disconnect.`, 'err');
+                            executeLocalCancel(activeTransferId);
+                        }
                     }
                 });
             });
@@ -408,7 +462,6 @@
                 } else { conn.send({ type: 'ERROR', msg: 'Invalid PIN' }); conn.close(); }
                 return;
             }
-
             processStandardPayload(conn, data);
         }
 
@@ -459,12 +512,17 @@
                     document.getElementById('client-conn-badge').className = 'badge bg-red';
                     document.getElementById('client-conn-badge').innerText = '❌ Disconnected';
                     document.getElementById('send-controls').style.display = 'none';
-                    addLog('Connection closed.', 'err');
+                    addLog('Connection to Host lost.', 'err');
+                    
+                    // DISCONNECTION HANDLING
+                    if (activeTransferId && !isHost) {
+                        executeLocalCancel(activeTransferId);
+                    }
                 });
             });
         }
 
-        // --- CORE TRANSFER ENGINE (SEQUENTIAL CHUNKING) ---
+        // --- TRANSFER ENGINE ---
         function recoverFromDB(conn) {
             const tx = dbInstance.transaction(['transfers'], 'readonly');
             const req = tx.objectStore('transfers').getAll();
@@ -497,13 +555,10 @@
         async function processStandardPayload(conn, data) {
             const peerName = (conn.devId && connectedPeers.has(conn.devId)) ? connectedPeers.get(conn.devId).name : 'Peer';
 
-            // --- UNIFIED ACK DELIVERY & QUEUE ADVANCEMENT ---
             if (data.type === 'ACK_DELIVERED') {
                 addLog(`Delivered to ${peerName}: ${data.item}`, 'success');
-                
                 if (data.transferId) {
                     const sf = sharedFiles.get(data.transferId);
-                    
                     showAnalyticsProgressUI(data.transferId, `Sent: ${data.item}`, 100, formatBytes(sf?sf.size:0), formatBytes(sf?sf.size:0), "0.00", "Complete", false, true);
                     hideAnalyticsProgressUI(data.transferId);
 
@@ -515,13 +570,29 @@
                 return;
             }
 
-            if (data.type === 'ACK_ACTION') {
-                addLog(`${peerName} ${data.action} ${data.item}`, 'action'); return;
+            if (data.type === 'ACK_ACTION') { addLog(`${peerName} ${data.action} ${data.item}`, 'action'); return; }
+
+            if (data.type === 'TRANSFER_CONTROL') {
+                const { action, transferId } = data;
+                if (action === 'CANCEL') { executeLocalCancel(transferId); return; }
+                const isPaused = (action === 'PAUSE');
+                
+                if (incomingStreams[transferId]) {
+                    incomingStreams[transferId].paused = isPaused;
+                    dbSaveMeta({ ...incomingStreams[transferId] });
+                    if (isPaused && incomingStreams[transferId].watchdog) clearTimeout(incomingStreams[transferId].watchdog);
+                    updatePauseUI(transferId, isPaused);
+                    if (!isPaused) requestChunkWithRetry(incomingStreams[transferId].conn, transferId, incomingStreams[transferId].receivedChunks);
+                } else if (sharedFiles.has(transferId)) {
+                    sharedFiles.get(transferId).paused = isPaused;
+                    updatePauseUI(transferId, isPaused);
+                }
+                return;
             }
 
             if (data.type === 'FILE_OFFER') {
                 if (!incomingStreams[data.transferId]) {
-                    const meta = { transferId: data.transferId, name: data.name, size: data.size, mime: data.mime, totalChunks: data.totalChunks, receivedChunks: 0, receivedBytes: 0, paused: false };
+                    const meta = { transferId: data.transferId, name: data.name, size: data.size, mime: data.mime, totalChunks: data.totalChunks, receivedChunks: 0, receivedBytes: 0, paused: false, conn: conn };
                     await dbSaveMeta(meta);
                     incomingStreams[data.transferId] = { ...meta, startTime: Date.now() };
                 }
@@ -532,7 +603,7 @@
 
             if (data.type === 'CHUNK_REQ') {
                 const sf = sharedFiles.get(data.transferId);
-                if (!sf) return conn.send({ type: 'FILE_ABORTED', transferId: data.transferId, msg: 'Sender refreshed or cancelled file.' });
+                if (!sf) return conn.send({ type: 'FILE_ABORTED', transferId: data.transferId, msg: 'Sender cancelled file.' });
                 if (sf.paused) return; 
                 
                 const metricId = data.transferId; 
@@ -564,7 +635,6 @@
             if (data.type === 'FILE_CHUNK') {
                 const stream = incomingStreams[data.transferId];
                 if (!stream || stream.paused) return;
-                
                 if (stream.watchdog) clearTimeout(stream.watchdog);
                 
                 if (data.index === stream.receivedChunks) {
@@ -589,6 +659,7 @@
                             showAnalyticsProgressUI(data.transferId, `Assembling File: ${stream.name}...`, 100, formatBytes(stream.size), formatBytes(stream.size), "0.00", "Saving", false);
                             
                             const blob = await dbAssembleAndClear(data.transferId, stream.totalChunks, stream.mime, stream.name);
+                            receivedFilesForZip.push({ name: stream.name, blob: blob }); // Store for ZIP
                             renderInboxCard({ type: 'file', fileBlob: blob, name: stream.name, transferId: data.transferId });
                             
                             conn.send({ type: 'ACK_DELIVERED', item: stream.name, transferId: data.transferId });
@@ -598,7 +669,9 @@
                             requestChunkWithRetry(conn, data.transferId, data.index + 1);
                         }
                     } catch (e) {
-                        alert(`Storage Error: ${e}`);
+                        // STORAGE ERROR HANDLING (AUTO-PAUSE)
+                        alert(`Storage Quota Error: Clear space on your device to continue.\n\nTransfer has been paused automatically.`);
+                        toggleTransferPause(data.transferId); 
                     }
                 }
                 return;
@@ -625,9 +698,9 @@
             }
         }
 
+        // --- CONTROL ACTIONS ---
         function toggleTransferPause(transferId) {
             let isPaused = false;
-
             if (incomingStreams[transferId]) {
                 incomingStreams[transferId].paused = !incomingStreams[transferId].paused;
                 isPaused = incomingStreams[transferId].paused;
@@ -641,9 +714,9 @@
 
             updatePauseUI(transferId, isPaused);
             safeSendToTargets({ type: 'TRANSFER_CONTROL', action: isPaused ? 'PAUSE' : 'RESUME', transferId: transferId });
-
-            if (!isPaused && incomingStreams[transferId]) {
-                requestChunkWithRetry(incomingStreams[transferId].conn, transferId, incomingStreams[transferId].receivedChunks);
+            
+            if (!isPaused && incomingStreams[transferId]) { 
+                requestChunkWithRetry(incomingStreams[transferId].conn, transferId, incomingStreams[transferId].receivedChunks); 
             }
         }
 
@@ -682,14 +755,22 @@
             }
         }
 
-        // --- UI & ANALYTICS ---
+        function cancelEntireQueue() {
+            if(confirm("Are you sure you want to clear all pending files in the queue?")) {
+                transferQueue = [];
+                updateQueueUI();
+                addLog("Queue cleared by user.", "action");
+            }
+        }
+
+        // --- UI & DOWNLOAD ACTIONS ---
         function renderInboxCard(data) {
             document.getElementById('empty-inbox-msg').style.display = 'none';
             inboxCounter++; document.getElementById('inbox-count').innerText = inboxCounter;
             
-            // Show Download All button if it's a file
             if (data.type === 'file') {
                 document.getElementById('btn-download-all').style.display = 'inline-flex';
+                document.getElementById('btn-zip-all').style.display = 'inline-flex';
             }
 
             const stack = document.getElementById('inbox-stack');
@@ -700,7 +781,6 @@
             if (data.type === 'file') {
                 const url = URL.createObjectURL(data.fileBlob);
                 bodyHtml = `<strong>📁 File:</strong> ${data.name}`;
-                // Crucial: add 'data-download-link' class so the Download All function can find it
                 actionsHtml = `<a href="${url}" download="${data.name}" class="btn btn-primary btn-sm data-download-link">💾 Download</a>`;
             } else if (data.type === 'url') {
                 bodyHtml = `<strong>🔗 URL:</strong><br><a href="${data.content}" target="_blank" style="color:var(--primary); word-break:break-all;">${data.content}</a>`;
@@ -717,19 +797,75 @@
             stack.prepend(card);
         }
 
-        // --- DOWNLOAD ALL FUNCTION ---
         function downloadAllFiles() {
             const links = document.querySelectorAll('.data-download-link');
             if (links.length === 0) return alert("No files available to download.");
-
-            const confirmMsg = `Download ${links.length} files?\n\nNote: Your browser may block multiple downloads. If prompted, please click "Allow" to download multiple files.`;
-            
-            if (confirm(confirmMsg)) {
+            if (confirm(`Download ${links.length} files?\n\nNote: Your browser may block multiple downloads. If prompted, please click "Allow".`)) {
                 let delay = 0;
                 links.forEach(link => {
                     setTimeout(() => { link.click(); }, delay);
-                    delay += 350; // Stagger by 350ms to help bypass aggressive popup blockers
+                    delay += 350; 
                 });
+            }
+        }
+
+        // --- MEMORY OPTIMIZED ZIP GENERATION ---
+        async function downloadAllAsZip() {
+            if (receivedFilesForZip.length === 0) return alert("No files to zip.");
+            
+            const btn = document.getElementById('btn-zip-all');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '⏳ Zipping...';
+            btn.disabled = true;
+
+            try {
+                const zip = new JSZip();
+                
+                // Track duplicate names
+                let nameCount = {};
+                
+                receivedFilesForZip.forEach(f => {
+                    let safeName = f.name;
+                    if(nameCount[f.name]) {
+                        nameCount[f.name]++;
+                        const parts = f.name.split('.');
+                        const ext = parts.length > 1 ? '.' + parts.pop() : '';
+                        safeName = `${parts.join('.')}_(${nameCount[f.name]})${ext}`;
+                    } else {
+                        nameCount[f.name] = 1;
+                    }
+                    zip.file(safeName, f.blob);
+                });
+                
+                const content = await zip.generateAsync({ type: "blob" });
+                const url = URL.createObjectURL(content);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `HyperShare_Batch_${new Date().getTime()}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+                // MEMORY LEAK PREVENTION PROMPT
+                setTimeout(() => {
+                    if(confirm("ZIP generated successfully!\n\nDo you want to clear these files from the browser memory to free up RAM?")) {
+                        receivedFilesForZip = []; // Release blobs
+                        document.getElementById('inbox-stack').innerHTML = '<p id="empty-inbox-msg" style="color: var(--text-muted); text-align: center; padding: 20px;">Inbox cleared.</p>';
+                        inboxCounter = 0; document.getElementById('inbox-count').innerText = 0;
+                        document.getElementById('btn-download-all').style.display = 'none';
+                        document.getElementById('btn-zip-all').style.display = 'none';
+                        addLog("Inbox files cleared from RAM to save memory.", "info");
+                    }
+                }, 1000);
+
+            } catch (e) {
+                alert("Failed to create ZIP: " + e.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
             }
         }
 
@@ -786,6 +922,7 @@
             }
         }
 
+        // --- QUEUE INITIATION & PROCESSING ---
         async function initiateTransfer() {
             if (isHost && connectedPeers.size === 0) return alert("No active connections.");
             if (!isHost && (!hostConnection || !hostConnection.open)) return alert("Not connected to host.");
@@ -797,13 +934,11 @@
                 const files = document.getElementById('p2p-file').files;
                 if (!files || files.length === 0) return alert("Select at least one file.");
                 
-                for (let i = 0; i < files.length; i++) {
-                    transferQueue.push(files[i]);
-                }
-                
+                for (let i = 0; i < files.length; i++) { transferQueue.push(files[i]); }
                 document.getElementById('p2p-file').value = '';
+                
                 updateQueueUI();
-                processNextInQueue();
+                processNextInQueue(); 
             } else {
                 let payload = { type: type };
                 if (type === 'url') { let u = document.getElementById('p2p-url').value.trim(); if (!/^https?:\/\//i.test(u)) u = 'https://' + u; payload.content = u; } 
@@ -816,11 +951,7 @@
 
         function processNextInQueue() {
             if (activeTransferId !== null) return; 
-            
-            if (transferQueue.length === 0) {
-                updateQueueUI();
-                return;
-            }
+            if (transferQueue.length === 0) { updateQueueUI(); return; }
 
             const file = transferQueue.shift();
             updateQueueUI();
@@ -829,7 +960,6 @@
             sharedFiles.set(activeTransferId, { file: file, name: file.name, size: file.size, totalChunks: Math.ceil(file.size/CHUNK_SIZE), mime: file.type, paused: false });
             
             safeSendToTargets({ type: 'FILE_OFFER', transferId: activeTransferId, name: file.name, size: file.size, totalChunks: Math.ceil(file.size/CHUNK_SIZE), mime: file.type }, currentTargetId);
-            
             showAnalyticsProgressUI(activeTransferId, `Sending: ${file.name}`, 0, "0 B", formatBytes(file.size), "0.00", "Calculating...", false, false);
             addLog(`Started sending from queue: ${file.name}`, 'info');
         }
@@ -837,7 +967,10 @@
         function updateQueueUI() {
             const queueDiv = document.getElementById('queue-status');
             if (transferQueue.length > 0) {
-                let html = `<div style="font-weight: bold; color: var(--primary); text-align: center;">📦 Queue: ${transferQueue.length} file(s) waiting</div>`;
+                let html = `<div style="display:flex; justify-content:space-between; align-items:center; font-weight: bold; color: var(--primary);">
+                                <span>📦 Queue: ${transferQueue.length} waiting</span>
+                                <button class="btn-sm btn-danger" onclick="cancelEntireQueue()">🗑️ Clear</button>
+                            </div>`;
                 html += `<div style="margin-top: 8px; font-size: 0.85em; text-align: left; color: var(--text-main);">`;
                 
                 transferQueue.forEach((f, index) => {
