@@ -529,7 +529,7 @@
             req.onsuccess = () => {
                 const unfinished = req.result;
                 unfinished.forEach(meta => {
-                    incomingStreams[meta.transferId] = { ...meta, startTime: Date.now() };
+                    incomingStreams[meta.transferId] = { ...meta, startTime: Date.now(), conn: conn };
                     addLog(`Resuming incomplete file from storage: ${meta.name}`, 'info');
                     requestChunkWithRetry(conn, meta.transferId, meta.receivedChunks);
                 });
@@ -579,7 +579,8 @@
                 
                 if (incomingStreams[transferId]) {
                     incomingStreams[transferId].paused = isPaused;
-                    dbSaveMeta({ ...incomingStreams[transferId] });
+                    dbSaveMeta({ transferId: transferId, name: incomingStreams[transferId].name, size: incomingStreams[transferId].size, mime: incomingStreams[transferId].mime, totalChunks: incomingStreams[transferId].totalChunks, receivedChunks: incomingStreams[transferId].receivedChunks, receivedBytes: incomingStreams[transferId].receivedBytes, paused: isPaused });
+                    
                     if (isPaused && incomingStreams[transferId].watchdog) clearTimeout(incomingStreams[transferId].watchdog);
                     updatePauseUI(transferId, isPaused);
                     if (!isPaused) requestChunkWithRetry(incomingStreams[transferId].conn, transferId, incomingStreams[transferId].receivedChunks);
@@ -590,11 +591,19 @@
                 return;
             }
 
+            // --- BUG FIX: DO NOT SAVE `conn` TO INDEXEDDB ---
             if (data.type === 'FILE_OFFER') {
                 if (!incomingStreams[data.transferId]) {
-                    const meta = { transferId: data.transferId, name: data.name, size: data.size, mime: data.mime, totalChunks: data.totalChunks, receivedChunks: 0, receivedBytes: 0, paused: false, conn: conn };
-                    await dbSaveMeta(meta);
-                    incomingStreams[data.transferId] = { ...meta, startTime: Date.now() };
+                    const metaToSave = { transferId: data.transferId, name: data.name, size: data.size, mime: data.mime, totalChunks: data.totalChunks, receivedChunks: 0, receivedBytes: 0, paused: false };
+                    
+                    try {
+                        await dbSaveMeta(metaToSave); // Clean object, no functions/channels
+                        // Add `conn` only to the RAM tracker
+                        incomingStreams[data.transferId] = { ...metaToSave, startTime: Date.now(), conn: conn };
+                    } catch (e) {
+                        alert("Storage Error: Failed to initialize file offer.");
+                        return;
+                    }
                 }
                 const nextIdx = incomingStreams[data.transferId].receivedChunks;
                 if (nextIdx < data.totalChunks) { requestChunkWithRetry(conn, data.transferId, nextIdx); }
@@ -603,7 +612,7 @@
 
             if (data.type === 'CHUNK_REQ') {
                 const sf = sharedFiles.get(data.transferId);
-                if (!sf) return conn.send({ type: 'FILE_ABORTED', transferId: data.transferId, msg: 'Sender cancelled file.' });
+                if (!sf) return conn.send({ type: 'FILE_ABORTED', transferId: data.transferId, msg: 'Sender cancelled file or refreshed page.' });
                 if (sf.paused) return; 
                 
                 const metricId = data.transferId; 
@@ -635,6 +644,7 @@
             if (data.type === 'FILE_CHUNK') {
                 const stream = incomingStreams[data.transferId];
                 if (!stream || stream.paused) return;
+                
                 if (stream.watchdog) clearTimeout(stream.watchdog);
                 
                 if (data.index === stream.receivedChunks) {
@@ -659,7 +669,7 @@
                             showAnalyticsProgressUI(data.transferId, `Assembling File: ${stream.name}...`, 100, formatBytes(stream.size), formatBytes(stream.size), "0.00", "Saving", false);
                             
                             const blob = await dbAssembleAndClear(data.transferId, stream.totalChunks, stream.mime, stream.name);
-                            receivedFilesForZip.push({ name: stream.name, blob: blob }); // Store for ZIP
+                            receivedFilesForZip.push({ name: stream.name, blob: blob }); 
                             renderInboxCard({ type: 'file', fileBlob: blob, name: stream.name, transferId: data.transferId });
                             
                             conn.send({ type: 'ACK_DELIVERED', item: stream.name, transferId: data.transferId });
@@ -704,7 +714,10 @@
             if (incomingStreams[transferId]) {
                 incomingStreams[transferId].paused = !incomingStreams[transferId].paused;
                 isPaused = incomingStreams[transferId].paused;
-                dbSaveMeta({ ...incomingStreams[transferId] });
+                
+                // Safe DB sync - explicitly do not include conn object
+                dbSaveMeta({ transferId: transferId, name: incomingStreams[transferId].name, size: incomingStreams[transferId].size, mime: incomingStreams[transferId].mime, totalChunks: incomingStreams[transferId].totalChunks, receivedChunks: incomingStreams[transferId].receivedChunks, receivedBytes: incomingStreams[transferId].receivedBytes, paused: isPaused });
+                
                 if (isPaused && incomingStreams[transferId].watchdog) clearTimeout(incomingStreams[transferId].watchdog);
             } else if (sharedFiles.has(transferId)) {
                 let sf = sharedFiles.get(transferId);
@@ -821,7 +834,6 @@
             try {
                 const zip = new JSZip();
                 
-                // Track duplicate names
                 let nameCount = {};
                 
                 receivedFilesForZip.forEach(f => {
@@ -849,10 +861,9 @@
                 
                 setTimeout(() => URL.revokeObjectURL(url), 5000);
 
-                // MEMORY LEAK PREVENTION PROMPT
                 setTimeout(() => {
                     if(confirm("ZIP generated successfully!\n\nDo you want to clear these files from the browser memory to free up RAM?")) {
-                        receivedFilesForZip = []; // Release blobs
+                        receivedFilesForZip = []; 
                         document.getElementById('inbox-stack').innerHTML = '<p id="empty-inbox-msg" style="color: var(--text-muted); text-align: center; padding: 20px;">Inbox cleared.</p>';
                         inboxCounter = 0; document.getElementById('inbox-count').innerText = 0;
                         document.getElementById('btn-download-all').style.display = 'none';
